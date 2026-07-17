@@ -107,6 +107,9 @@ final class ConnectionStore: ObservableObject {
         case .loginCompleted:
             status = .connected
             ownUserID = client.ownUserID
+            if UserDefaults.standard.object(forKey: "sounds.connect") as? Bool ?? true {
+                sounds.play(.connect)
+            }
             if let codec = client.codec(forChannel: 0) {
                 serverCodec = "\(codec.name) @ \(codec.rate) Hz"
                 warnIfUnsupported(codec)

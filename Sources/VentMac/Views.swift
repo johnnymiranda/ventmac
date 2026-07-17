@@ -213,12 +213,14 @@ struct SettingsView: View {
     @EnvironmentObject var ptt: PTTManager
     @EnvironmentObject var audio: AudioSettings
     @AppStorage("sounds.channelJoinLeave") private var joinLeaveSounds = true
+    @AppStorage("sounds.connect") private var connectSound = true
 
     var body: some View {
         Form {
             Section("Sounds") {
+                Toggle("Play a sound when you connect", isOn: $connectSound)
                 Toggle("Play a sound when someone joins or leaves your channel", isOn: $joinLeaveSounds)
-                Text("A quiet chime on join, a soft pop on leave — only for your current channel.")
+                Text("Quiet cues at low volume — a soft ping on connect, a chime on join, a pop on leave (your channel only).")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
