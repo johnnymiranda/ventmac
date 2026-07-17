@@ -8,6 +8,14 @@ VentMac is an independent, open-source client built on [Mangler](https://github.
 macOS, and running the Windows Ventrilo client under Wine can't bind a reliable global PTT key
 while a game is focused.
 
+## Why I built this
+
+I've been gaming with the same group for years, and they've never left Ventrilo 3. Somewhere
+along the way I became a Mac person — it's my daily driver now — and none of the ways to join my
+friends were any good: keep a Windows machine around just for voice chat, or run Ventrilo under
+Wine, where the one thing I actually needed (a global push-to-talk key that works while a game is
+focused) never worked right. I just wanted to talk to my friends from my Mac. So I built VentMac.
+
 > **Not affiliated with Ventrilo.** VentMac is an independent interoperability project. It is not
 > affiliated with, sponsored by, or endorsed by LightSpeed Gaming LLC (the current owner of the
 > Ventrilo trademark) or the former Flagship Industries, Inc. "Ventrilo" is a trademark of its
