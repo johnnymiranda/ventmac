@@ -2,29 +2,29 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <key>CFBundleName</key>
-    <string>VentMac</string>
-    <key>CFBundleDisplayName</key>
-    <string>VentMac</string>
-    <key>CFBundleIdentifier</key>
-    <string>com.cryptexlabs.ventmac</string>
-    <key>CFBundleExecutable</key>
-    <string>VentMac</string>
-    <key>CFBundleIconFile</key>
-    <string>AppIcon</string>
-    <key>CFBundleVersion</key>
-    <string>0.1.0</string>
-    <key>CFBundleShortVersionString</key>
-    <string>0.1.0</string>
-    <key>CFBundlePackageType</key>
-    <string>APPL</string>
-    <key>LSMinimumSystemVersion</key>
-    <string>13.0</string>
-    <key>NSMicrophoneUsageDescription</key>
-    <string>VentMac needs your microphone to transmit voice to your Ventrilo server.</string>
-    <key>NSHighResolutionCapable</key>
-    <true/>
-    <key>LSApplicationCategoryType</key>
-    <string>public.app-category.social-networking</string>
+	<key>CFBundleDisplayName</key>
+	<string>VentMac</string>
+	<key>CFBundleExecutable</key>
+	<string>VentMac</string>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon</string>
+	<key>CFBundleIdentifier</key>
+	<string>com.cryptexlabs.ventmac</string>
+	<key>CFBundleName</key>
+	<string>VentMac</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>0.1.1</string>
+	<key>CFBundleVersion</key>
+	<string>0.1.1</string>
+	<key>LSApplicationCategoryType</key>
+	<string>public.app-category.social-networking</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>13.0</string>
+	<key>NSHighResolutionCapable</key>
+	<true/>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>VentMac needs your microphone to transmit voice to your Ventrilo server.</string>
 </dict>
 </plist>
