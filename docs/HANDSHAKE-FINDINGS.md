@@ -197,3 +197,33 @@ data. Suspect the feeder/consumer threading around `v3_login`'s blocking loop, o
 3.1.0 post-0x34 finalization difference. This is the only thing between "authenticated"
 and "usable". Debug with `V3_DEBUG=2`; the session transcript is reproducible against the
 live server.
+
+---
+
+## Update 2026-07-17 (later) — LOGIN_COMPLETE FIXED: event queue init race
+
+Root cause found and fixed. `v3_queue_event()` (libventrilo3.c) silently **drops**
+(frees) every event when `eventq_mutex == NULL`:
+```c
+if (eventq_mutex == NULL) { free(ev); /* "client does not appear to be listening yet" */ return true; }
+```
+That mutex is lazily created only on the **first `v3_get_event()` call**. Our V3Client
+feeder started the consumer (which calls `v3_get_event`) *after* `v3_login()` returned —
+so during login the mutex was NULL and **all ~18 events queued during login, including
+`V3_EVENT_LOGIN_COMPLETE`, were discarded.** Proven with `V3_DEBUG=3` (event/mutex
+level): 18× "does not appear to be listening", mutex initialized once (post-login),
+only 1 event (a PING) queued successfully.
+
+Fix (Sources/VentCore/V3Client.swift): call `v3_get_event(V3_NONBLOCK)` on the feeder
+**before** `v3_login()` to force `eventq_mutex` creation; login events then accumulate
+in the queue and the consumer drains them in order.
+
+**Result — full working login against vent.example.com:**
+```
+[100%] Login complete.   login complete — user id 66
+server default codec: Speex 32kHz Quality 10 @ 32000 Hz
+Channel tree: lobby {John, Johnny, Example Server}; ▸ dadlock (id 1) [Speex 32kHz Quality 10]
+```
+Codec is **Speex** — this build decodes it; GSM was never needed. VentMac now
+authenticates, finalizes login, and renders the live channel tree + users. Remaining to
+exercise live: send/receive audio + global PTT (needs a person talking).

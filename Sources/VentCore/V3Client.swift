@@ -44,6 +44,7 @@ public final class V3Client: @unchecked Sendable {
         if let dbg = ProcessInfo.processInfo.environment["V3_DEBUG"] {
             var mask = V3_DEBUG_INFO | V3_DEBUG_SOCKET | V3_DEBUG_ERROR
             if dbg == "2" { mask |= V3_DEBUG_INTERNAL | V3_DEBUG_PACKET | V3_DEBUG_PACKET_PARSE }
+            if dbg == "3" { mask |= V3_DEBUG_INTERNAL | V3_DEBUG_EVENT | V3_DEBUG_MUTEX }
             v3_debuglevel(UInt32(mask))
         }
 
@@ -52,6 +53,15 @@ public final class V3Client: @unchecked Sendable {
             let p = strdup(password); let ph = strdup(phonetic)
             defer { free(s); free(u); free(p); free(ph) }
             guard let self else { return }
+            // Initialize libventrilo3's event queue BEFORE login. v3_queue_event
+            // silently drops (frees) every event while eventq_mutex is NULL, and
+            // that mutex is lazily created only on the first v3_get_event() call.
+            // Without this, all events queued during v3_login — channel/user list
+            // AND V3_EVENT_LOGIN_COMPLETE — are discarded, so the client never
+            // learns it finished logging in. This forces the mutex to exist first;
+            // login events then accumulate in the queue and the consumer drains
+            // them in order below.
+            _ = v3_get_event(V3_NONBLOCK)
             if v3_login(s, u, p, ph) == 0 {
                 continuation.yield(.loginFailed(String(cString: v3_last_error())))
                 self.finishConnection(continuation)
