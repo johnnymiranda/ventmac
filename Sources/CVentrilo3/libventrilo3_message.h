@@ -33,14 +33,10 @@
 #include "ventrilo3.h"
 
 /*
- * VentMac patch (2026-07-16): original values were "3.0.5" / "3.0.0". A live
- * the host 3.1.0 server rejects login with "Incompatible version. Server is
- * running version 3.1.0." Bumping both to "3.1.0" is a best guess and is NOT
- * yet accepted — the server still rejects, so it validates an exact value we
- * can't infer from the error. The correct strings are the ones the official
- * 3.1.0.101 client puts in its (encrypted) 0x48 login; read them out of the
- * Windows packet capture (docs/HANDSHAKE-FINDINGS.md open item) and set them
- * here. Everything below the version check is confirmed working end to end.
+ * VentMac patch: original Mangler values were "3.0.5" / "3.0.0". These 0x48
+ * login version fields are cosmetic for a modern 3.1.0 server; the version the
+ * server actually gates on is the 0x00 handshake version (see _v3_put_0x00 in
+ * libventrilo3_message.c, set to "3.1.0"). Kept at "3.1.0" for consistency.
  */
 #define V3_CLIENT_VERSION   "3.1.0"
 #define V3_PROTO_VERSION    "3.1.0"
