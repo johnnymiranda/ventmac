@@ -167,3 +167,33 @@ we can't guess from the error string.
 sends; set them in `libventrilo3_message.h`. Decryption needs that session's 64-byte
 handshake key (derivable from the captured type-6 reply body + the sync server IP/vnum).
 Bring the pcap over (scp/Tailscale, see above) and this is a short exercise.
+
+---
+
+## Update 2026-07-17 — AUTH SOLVED: the version gate was the 0x00 handshake
+
+Decrypted the official client's **first TCP message (0x00 handshake)** straight from
+the pcap — it uses the fixed `ventrilo_first_enc` key (no session key needed). Framing
+is `[2-byte BE length=84][84-byte first-enc body]`; `data[i] -= first[i%11] + (i%27)`
+with `first = AA 55 22 CC 69 7C 38 91 88 F5 E1`.
+
+Result: **the 0x00 handshake version the real client sends is `"3.1.0"`** — our vendored
+code hardcoded `"3.0.0"` there (libventrilo3_message.c `_v3_put_0x00`). *That* is the
+field the 3.1.0 server gates on, NOT the 0x48 client_version/proto_version (which is why
+bumping those did nothing). Salts in 0x00 are per-session random — irrelevant to us.
+
+Fix: `_v3_put_0x00` now sends `"3.1.0"`. **Login now authenticates against the live
+vent.example.com server:** UDP handshake → key derivation → 0x00/0x48 → server sends the
+channel list (channel "dadlock") and user list (3 users online), 0x34 login-terminator
+re-scrambles the keys, connection stays stable (no disconnect). The whole hard blocker is
+gone.
+
+### Remaining (small, next session): LOGIN_COMPLETE doesn't fire
+After the `do{...}while(type != 0x34)` login loop in `v3_login` receives and processes
+0x34 (keys re-scramble, "packet processed"), the post-loop block that sends 0x5c/0x46 and
+queues `V3_EVENT_LOGIN_COMPLETE` never runs — TCP receives just continue. So ventctl/the
+app never flip to the "connected" UI state or render the tree, despite receiving live
+data. Suspect the feeder/consumer threading around `v3_login`'s blocking loop, or a
+3.1.0 post-0x34 finalization difference. This is the only thing between "authenticated"
+and "usable". Debug with `V3_DEBUG=2`; the session transcript is reproducible against the
+live server.

@@ -403,7 +403,11 @@ _v3_put_0x00(void) {/*{{{*/
     memset(mc, 0, sizeof(_v3_msg_0x00));
 
     mc->type = 0x00;
-    strncpy(mc->version, "3.0.0", 16);
+    /* VentMac patch (2026-07-17): the 0x00 handshake version is what a 3.1.0
+     * server gates on ("Incompatible version. Server is running version 3.1.0").
+     * Decrypting the official client's 0x00 from the packet capture (fixed
+     * first-enc key) showed it sends "3.1.0" here, not "3.0.0". */
+    strncpy(mc->version, "3.1.0", 16);
     memset(mc->salt1, 0, 32);
     memset(mc->salt2, 0, 32);
     int ctr;
