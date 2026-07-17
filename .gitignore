@@ -6,3 +6,4 @@ VentMac.app/
 
 # Traffic captures — sensitive (creds/session/key material), never commit
 captures/
+dist/

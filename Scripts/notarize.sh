@@ -17,7 +17,10 @@ ZIP="dist/VentMac-notarize.zip"
 
 [ -d "$APP" ] || { echo "Build it first: Scripts/make-app.sh"; exit 1; }
 
-if ! codesign -dvvv "$APP" 2>&1 | grep -q "Authority=Developer ID Application"; then
+# Capture first, then grep — piping codesign straight into `grep -q` races under
+# pipefail (grep exits on match, codesign gets SIGPIPE -> 141 -> false failure).
+sig=$(codesign -dvvv "$APP" 2>&1 || true)
+if ! grep -q "Authority=Developer ID Application" <<<"$sig"; then
     echo "ERROR: $APP is not Developer ID signed. Renew your Apple Developer ID,"
     echo "create a Developer ID Application cert, then rerun Scripts/make-app.sh."
     exit 1

@@ -9,8 +9,15 @@ VERSION="${1:-$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' Sc
 OUT="dist"
 ZIP="$OUT/VentMac-$VERSION.zip"
 
-echo "==> Building VentMac.app (release)"
-Scripts/make-app.sh >/dev/null
+# Package the already-built, signed, and (ideally) notarized+stapled app.
+# Do NOT rebuild here — that would re-sign and strip the notarization staple.
+# Run Scripts/make-app.sh and Scripts/notarize.sh first.
+[ -d VentMac.app ] || { echo "VentMac.app not found — run Scripts/make-app.sh (and notarize.sh) first."; exit 1; }
+if xcrun stapler validate VentMac.app >/dev/null 2>&1; then
+    echo "==> Packaging notarized + stapled VentMac.app"
+else
+    echo "==> WARNING: VentMac.app is not stapled — run Scripts/notarize.sh for a clean install. Packaging anyway."
+fi
 
 mkdir -p "$OUT"
 rm -f "$ZIP"
