@@ -13,7 +13,7 @@ cask "ventmac" do
   desc "Native macOS client for legacy Ventrilo 3 servers with global push-to-talk"
   homepage "https://github.com/johnnymiranda/ventmac"
 
-  depends_on macos: ">= :ventura"
+  depends_on macos: :ventura
   depends_on arch: :arm64
 
   app "VentMac.app"
