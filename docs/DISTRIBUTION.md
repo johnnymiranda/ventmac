@@ -1,47 +1,58 @@
 # Distributing VentMac via Homebrew
 
-This is the plan to publish VentMac as a Homebrew cask. It needs a couple of **decisions from you** (marked ⚠️) before anything goes public.
+VentMac ships as a **self-contained, notarized** macOS app in a personal Homebrew cask. The app bundles its own speex/speexdsp libraries (no `brew install` needed by users) and, once notarized, installs with no Gatekeeper prompts.
 
-## The short version
+## Release flow
 
 ```sh
-Scripts/package-release.sh 0.1.0          # builds VentMac.app, zips it, prints sha256
+Scripts/make-app.sh                       # builds + bundles dylibs + signs (Developer ID)
+Scripts/notarize.sh                       # submits to Apple, staples the ticket
+Scripts/package-release.sh 0.1.0          # zips the stapled app, prints the sha256
 gh release create v0.1.0 dist/VentMac-0.1.0.zip --title "VentMac 0.1.0" --notes "…"
-# then in your tap repo, set version + sha256 in Casks/ventmac.rb
+# then set version + sha256 in the tap's Casks/ventmac.rb
 brew install --cask johnnymiranda/tap/ventmac
 ```
 
-## Path: a personal tap (recommended)
+## One-time setup
 
-The official `homebrew/cask` repo has notability + signing requirements a niche, unsigned app won't clear. The right route is your own tap:
+### 1. Developer ID Application certificate (no full Xcode needed)
+
+1. Keychain Access -> Certificate Assistant -> **Request a Certificate From a Certificate Authority** (save the CSR to disk; leave CA email blank, choose "Saved to disk").
+2. developer.apple.com -> Certificates -> **+** -> **Developer ID Application** -> upload the CSR -> download the `.cer`.
+3. Double-click the `.cer` to install it into your login keychain. `security find-identity -v -p codesigning` should now list a `Developer ID Application` identity.
+
+`Scripts/make-app.sh` auto-detects that identity and switches to Developer ID + hardened-runtime signing.
+
+### 2. notarytool credentials
+
+Create an app-specific password at appleid.apple.com (Sign-In and Security -> App-Specific Passwords), then store it once:
+
+```sh
+xcrun notarytool store-credentials ventmac-notary \
+    --apple-id johnnymiranda@gmail.com \
+    --team-id  YOURTEAMID \
+    --password <app-specific-password>
+```
+
+(Your Team ID is on developer.apple.com -> Membership.)
+
+## Path: a personal tap
+
+The official `homebrew/cask` repo has notability requirements a niche app won't clear, so use your own tap:
 
 1. Create a public repo **`johnnymiranda/homebrew-tap`**.
 2. Add **`Casks/ventmac.rb`** to it (a copy lives in this repo at `Casks/ventmac.rb`).
-3. Users install with `brew install --cask johnnymiranda/tap/ventmac` (Homebrew maps `johnnymiranda/tap` → the `homebrew-tap` repo).
+3. Users install with `brew install --cask johnnymiranda/tap/ventmac` (Homebrew maps `johnnymiranda/tap` -> the `homebrew-tap` repo).
 
-Each release: bump `version` and `sha256` in the tap's cask, and cut a GitHub release with the zip.
-
-## ⚠️ Decision 1 — signing / notarization
-
-The app is currently **ad-hoc signed and not notarized**. On another person's Mac, Gatekeeper will quarantine it, so first launch requires right-click → Open or `xattr -dr com.apple.quarantine`. Options:
-
-- **A. Ship unsigned (free).** The cask's `caveats` already tells users how to clear quarantine. Fine for friends / technical users. This is the default the drafted cask assumes.
-- **B. Notarize (Apple Developer Program, $99/yr).** Sign with a Developer ID, submit to Apple's notary service, staple the ticket. Then the cask "just works" with no quarantine friction. Best if you want a clean public install.
-
-You already need a self-signed cert for stable local TCC grants; a real Apple Developer ID would cover both.
-
-## ⚠️ Decision 2 — the speex dependency
-
-VentMac links against Homebrew's `speex`/`speexdsp` dylibs by absolute path (`/opt/homebrew/opt/speex/...`). The cask declares `depends_on formula: "speex"` and `"speexdsp"`, so Homebrew installs them — this works for any arm64 user with Homebrew in the standard prefix.
-
-For a fully self-contained app (no brew dependency), a future step is to bundle the dylibs into `VentMac.app/Contents/Frameworks/` and rewrite the install names with `install_name_tool` to `@rpath`. Not required for the cask; noted for later.
+Each release: cut a GitHub release with the zip, then bump `version` + `sha256` in the tap's cask.
 
 ## Files in this repo
 
+- `Scripts/make-app.sh` — builds, bundles speex dylibs to `@rpath`, signs (Developer ID / self-signed / ad-hoc, auto-detected)
+- `Scripts/notarize.sh` — submits to Apple's notary service and staples
+- `Scripts/package-release.sh` — zips the stapled app and prints the sha256
 - `Casks/ventmac.rb` — the cask definition (copy into your tap repo)
-- `Scripts/package-release.sh` — builds + zips the artifact, prints the sha256
-- `Scripts/make-app.sh` — assembles + signs `VentMac.app`
 
 ## Nothing here has been published
 
-No GitHub release, tap repo, or public artifact has been created. Everything above is staged for you to run when you've made the two decisions.
+No GitHub release, tap repo, or public artifact has been created. Everything above is staged for you to run once the Developer ID cert and notarytool credentials are in place.

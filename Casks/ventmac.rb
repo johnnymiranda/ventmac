@@ -13,20 +13,15 @@ cask "ventmac" do
   desc "Native macOS client for legacy Ventrilo 3 servers with global push-to-talk"
   homepage "https://github.com/johnnymiranda/ventmac"
 
-  depends_on formula: "speex"
-  depends_on formula: "speexdsp"
   depends_on macos: ">= :ventura"
   depends_on arch: :arm64
 
   app "VentMac.app"
 
+  # The app bundles its own speex/speexdsp libraries and is notarized, so it
+  # installs and launches with no extra dependencies or Gatekeeper prompts.
   caveats <<~EOS
-    VentMac is not notarized. If macOS blocks the first launch, either
-    right-click the app and choose Open, or clear the quarantine flag:
-      xattr -dr com.apple.quarantine "#{appdir}/VentMac.app"
-
-    It links against the Homebrew speex/speexdsp libraries (installed as
-    dependencies). For mouse-button push-to-talk, grant Input Monitoring
-    under System Settings -> Privacy & Security.
+    For mouse-button push-to-talk, grant Input Monitoring under
+    System Settings -> Privacy & Security -> Input Monitoring.
   EOS
 end
