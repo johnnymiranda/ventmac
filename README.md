@@ -21,13 +21,27 @@ I've been gaming with the same group for years, and they've never left Ventrilo 
 - Selectable microphone and output device
 - Server password stored in the macOS Keychain
 
-## Requirements
+## Install
 
-- macOS 13+ (Apple Silicon)
-- Xcode Command Line Tools (Swift 5.9+)
-- `brew install speex speexdsp`
+VentMac is notarized and self-contained — it bundles its own audio libraries, so it installs and launches with no dependencies and no Gatekeeper prompts. Requires macOS 13+ (Apple Silicon).
 
-## Build
+**Homebrew (recommended):**
+
+```sh
+brew install --cask johnnymiranda/tap/ventmac
+```
+
+**Manual:** download `VentMac-<version>.zip` from the [latest release](https://github.com/johnnymiranda/ventmac/releases/latest), unzip, and drag `VentMac.app` to `/Applications`.
+
+## Connecting to a server
+
+Open VentMac, fill in the server **host, port, and username** (plus a **password** if the server requires one), and click **Connect**. Double-click a channel to join it, then hold your push-to-talk key to speak.
+
+Your server password is saved in the **macOS Keychain** — never in plain text — and filled in automatically next time. Keychain access is tied to the app's code signature, so macOS may ask permission the first time a newly-updated build reads the saved password; click **Always Allow** and it won't ask again. To clear a saved password, delete the `com.cryptexlabs.ventmac` entry in Keychain Access.
+
+## Build from source
+
+Requires Xcode Command Line Tools (Swift 5.9+) and the Speex libraries (needed only to build — the released app bundles them):
 
 ```sh
 git clone https://github.com/johnnymiranda/ventmac.git
@@ -35,15 +49,10 @@ cd ventmac
 brew install speex speexdsp
 swift build                 # builds everything
 swift run ventctl --help    # headless CLI client (smoke-testing / diagnostics)
-Scripts/make-app.sh         # assembles + signs VentMac.app
-open VentMac.app
+Scripts/make-app.sh         # assembles + signs VentMac.app, then: open VentMac.app
 ```
 
-Once packaged (see `docs/DISTRIBUTION.md`), the intended install path is a Homebrew cask:
-
-```sh
-brew install --cask johnnymiranda/tap/ventmac   # (planned)
-```
+Packaging and notarizing a release is documented in [`docs/DISTRIBUTION.md`](docs/DISTRIBUTION.md).
 
 ## Targets
 
