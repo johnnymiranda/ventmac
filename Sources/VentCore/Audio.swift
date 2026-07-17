@@ -16,9 +16,15 @@ public final class V3AudioPlayer {
         let format: AVAudioFormat
     }
     private var voices: [UInt16: Voice] = [:]
+    private var mutedFlag = false
     private let lock = NSLock()
 
     public init() {}
+
+    /// "Mute Sound": drop all incoming audio while muted. Thread-safe.
+    public func setMuted(_ muted: Bool) {
+        lock.lock(); mutedFlag = muted; lock.unlock()
+    }
 
     /// Switch the output device live. Safe to call while connected.
     public func setOutputDevice(uid: String?) {
@@ -43,6 +49,7 @@ public final class V3AudioPlayer {
     public func play(userID: UInt16, rate: UInt32, channels: UInt8, pcm: Data) {
         guard !pcm.isEmpty else { return }
         lock.lock(); defer { lock.unlock() }
+        if mutedFlag { return }
 
         let ch = AVAudioChannelCount(max(1, channels))
         let voice = voiceFor(userID: userID, rate: Double(rate), channels: ch)

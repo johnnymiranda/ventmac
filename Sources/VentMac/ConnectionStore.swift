@@ -20,6 +20,11 @@ final class ConnectionStore: ObservableObject {
     @Published var serverCodec: String = ""
     @Published var passwordPromptChannel: V3Channel?
 
+    /// "Mute Sound" — silence all incoming audio.
+    @Published var soundMuted = false { didSet { player.setMuted(soundMuted) } }
+    /// "Mute Microphone/Binds" — block transmit and disable PTT binds.
+    @Published var micMuted = false { didSet { if micMuted { stopTalking() } } }
+
     private let client = V3Client.shared
     private let player = V3AudioPlayer()
     private let transmitter = V3Transmitter()
@@ -88,7 +93,7 @@ final class ConnectionStore: ObservableObject {
     }
 
     func startTalking() {
-        guard status == .connected, !transmitting else { return }
+        guard status == .connected, !transmitting, !micMuted else { return }
         if let error = transmitter.start() {
             lastError = error
         } else {

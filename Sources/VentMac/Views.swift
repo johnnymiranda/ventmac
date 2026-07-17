@@ -118,14 +118,23 @@ struct MainView: View {
                 Text(error).font(.caption).foregroundStyle(.red)
             }
             HStack {
-                Image(systemName: store.transmitting ? "mic.fill" : "mic.slash")
-                    .foregroundStyle(store.transmitting ? .green : .secondary)
-                Text(store.transmitting ? "Transmitting" : "Hold \(ptt.binding.display) to talk")
+                Image(systemName: store.micMuted ? "mic.slash.fill" : (store.transmitting ? "mic.fill" : "mic.slash"))
+                    .foregroundStyle(store.micMuted ? .orange : (store.transmitting ? .green : .secondary))
+                Text(store.micMuted ? "Microphone muted"
+                     : (store.transmitting ? "Transmitting" : "Hold \(ptt.binding.display) to talk"))
                     .font(.callout)
                 Spacer()
                 Text("\(store.roster.users.count) online")
                     .font(.caption).foregroundStyle(.secondary)
             }
+            Divider()
+            HStack(spacing: 20) {
+                Toggle("Mute Sound", isOn: $store.soundMuted)
+                Toggle("Mute Microphone/Binds", isOn: $store.micMuted)
+                Spacer()
+            }
+            .toggleStyle(.checkbox)
+            .font(.callout)
         }
         .padding(12)
     }
