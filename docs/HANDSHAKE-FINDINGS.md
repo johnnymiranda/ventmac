@@ -1,0 +1,133 @@
+# Ventrilo 3.1.0 login handshake — capture results (2026-07-16)
+
+Results of the capture described in [HANDSHAKE-CAPTURE.md](./HANDSHAKE-CAPTURE.md).
+The capture is **complete and decisive**: it confirms Mangler's three-phase login
+model and shows that the *only* thing broken in the vendored code is the phase-2
+endpoint list — Mangler dials four hardcoded ~2010 IPs; the modern client resolves
+`syncN.ventrilo.com` at runtime. Transport, port, packet magic, and packet type all
+still match Mangler.
+
+> **Sensitive-data note:** this document records protocol *structure* only (magic,
+> types, lengths, hostnames, ports, non-secret status fields). The encrypted phase-2
+> key/token bodies and the TCP login payload are **not** reproduced here — they carry
+> session key material. The raw `captures/*.pcapng` stays local and gitignored; it is
+> not in this repo. See "Handing the pcap to the Mac" below.
+
+## Capture metadata
+
+| | |
+|---|---|
+| Date | 2026-07-16 23:30:39 local |
+| Capture host | Windows 11, `192.168.1.21`, iface **Ethernet** (Realtek 2.5GbE) |
+| Tool | TShark/Wireshark **4.6.7**, Npcap |
+| Client | Ventrilo **3.1.0.101**, SHA256 `83CC7D43270911EF754F2BD74E5AC78AC04193F6819DE76A1A6F5F3E402FFF77` |
+| Server | `vent.example.com:6085` → `host.example.com` → **203.0.113.10** |
+| Method | full unfiltered 45s pcap + 2s Ventrilo-socket poll (`Scripts/capture-handshake.ps1`) |
+
+## Confirmed login flow (relative times)
+
+| t (s) | Phase | Exchange | Result |
+|---|---|---|---|
+| 2.90 | **1 — UDP status** | `192.168.1.21:64993 → 203.0.113.10:6085` | reply received |
+| 2.93–3.06 | DNS | resolve `sync5/6/7/8.ventrilo.com`, `proinfo.ventrilo.com` | see below |
+| 3.08 | **2 — UDP auth** | `:64993 → 192.99.245.77:6100` (sync5) **and** `→ 51.83.97.34:6100` (sync6) | **both replied** |
+| 3.11 | **3 — TCP login** | `:53399 → 203.0.113.10:6085` | 186 frames / 58 kB session |
+| 13.2 | aside | `:62191 → 192.99.245.77:5000` — one 78-byte datagram, no reply | `proinfo`, off critical path |
+
+DNS results:
+
+| host | A record |
+|---|---|
+| `sync5.ventrilo.com` | `192.99.245.77` |
+| `sync6.ventrilo.com` | `51.83.97.34` |
+| `sync7.ventrilo.com` | **no address** (empty answer) |
+| `sync8.ventrilo.com` | **no address** (empty answer; client retried 3×) |
+| `proinfo.ventrilo.com` | `192.99.245.77` |
+
+The client queried all four `syncN` hosts and used the two that resolved. A robust
+client must resolve the set and use whichever answer — do not assume a fixed IP.
+
+## Phase 1 — UDP status reply (offset-56 field confirmed)
+
+Server reply on UDP/6085 is a `UDCL` type-4 status record. Decoded non-secret fields:
+
+- **Offset 56, 16 bytes:** `2f 87 c0 ac b7 17 f3 3b 6f fb 86 0e 11 e9 e7 6b`
+  — byte-for-byte the baseline in HANDSHAKE-CAPTURE.md. It is **not** sixteen `0x44`
+  (`D`) bytes, so Mangler selects its remote-auth path — and the client did exactly
+  that (it went on to contact sync5/sync6). **Mangler's offset-56 interpretation is
+  correct.**
+- Server name field: `…Example Server`
+- OS field: `Linux-x86_64`
+- Version field: `3.1.0`
+
+## Phase 2 — UDP/6100 auth handshake (this is the fix)
+
+Outbound request to each sync server, UDP payload (16-byte header shown; body omitted):
+
+```
+00 00 00 00 | 55 44 43 4c | 00 05 | 00 84 | 01 00 00 00 | <116-byte obfuscated body>
+             "UDCL"         type=5  len=132
+```
+
+Reply from each sync server:
+
+```
+00 00 00 00 | 55 44 43 4c | 00 06 | 00 6c | 01 00 00 00 | <92-byte encrypted body>
+             "UDCL"         type=6  len=108
+```
+
+This is **exactly** Mangler's "correctly encoded type-5 probe on UDP/6100" and its
+type-6 answer. Port (6100), magic (`UDCL`), and request/reply types (5 → 6) all match
+the vendored code. The 92-byte reply body is the right size to carry Mangler's
+expected **64-byte handshake key + 16-byte token** plus framing.
+
+**Root cause of the stall:** Mangler sends this correct packet to four dead hardcoded
+IPs, gets no reply, and (per HANDSHAKE-CAPTURE.md) falls through an unsigned-timeout
+bug into a blocking `recvfrom()`. The endpoints, not the packet, are the problem.
+
+## Answers to HANDSHAKE-CAPTURE.md's four questions
+
+1. **Auth path** — ✅ Separate service exists: `syncN.ventrilo.com` (N=5..8),
+   **UDP/6100**, `UDCL` type-5 → type-6. Prefer the hostnames (resolve at runtime;
+   only sync5+sync6 are live here). Both live servers are hit near-simultaneously.
+2. **Offset-56 field** — ✅ Confirmed; Mangler's interpretation matches the live client.
+3. **Key/token model** — ✅ Structurally consistent (92-byte body ⊇ 64+16). Exact
+   layout still needs the type-6 body decrypted to confirm — see open items.
+4. **Endpoint ordinal/index** — ⚠️ Client used two servers (sync5, sync6). The
+   zero-based auth-server index sent in the encrypted TCP login must map to one of
+   them; correlating that requires decrypting the TCP login — see open items.
+
+## Proposed VentMac fix (targeted; follows the doc's repair checklist)
+
+1. Replace the four hardcoded UDP/6100 IPs with **runtime DNS resolution of
+   `sync5..sync8.ventrilo.com`**; probe the ones that resolve, use the first/valid
+   type-6 reply. Keep `proinfo.ventrilo.com` out of the auth path.
+2. Use **signed** socket/syscall result types so a timeout can't fall through to a
+   blocking `recvfrom()`.
+3. Make timeout/failure propagation real; add a **total deadline** across the probes.
+4. **Validate** the type-6 reply (magic, type, length) before deriving keys.
+5. Initialize/check handshake outputs (64-byte key, 16-byte token).
+6. Rebuild and re-run:
+   `ventctl -h vent.example.com:6085 -u <username> -p '<server-password>'`
+   (don't commit a real password; `-p` also exposes it in shell history / process list
+   — a future CLI change should read it from a prompt or fd).
+
+## Open items (need the pcap on the Mac)
+
+- **Decrypt the type-6 reply body** to confirm the exact 64-byte key + 16-byte token
+  offsets/layout.
+- **Correlate the auth-server index** in the TCP login to sync5 vs sync6 (Mangler's
+  `vnum` obfuscation vs the zero-based index in the encrypted TCP message).
+
+## Handing the pcap to the Mac
+
+The raw capture is **not** on GitHub (gitignored, sensitive). To continue the decrypt
+work on the Mac, copy it over a trusted channel — e.g. Tailscale:
+
+```
+# on the Mac
+scp john@<windows-tailscale-host>:'C:/Users/John/code/ventmac/captures/vent-login-20260716-233039.pcapng' ./captures/
+```
+
+Triage dumps (`vent-udp`, `vent-convos`, `vent-dns`, `vent-tcp-opens`, `vent-snapshot`)
+live alongside it in `captures/` and are equally sensitive.

@@ -1,5 +1,10 @@
 # Capturing the Ventrilo 3.1.0 login handshake (Windows + tshark)
 
+> **Captured 2026-07-16 — results in [HANDSHAKE-FINDINGS.md](./HANDSHAKE-FINDINGS.md).**
+> Short version: the phase-2 auth path is `syncN.ventrilo.com` on UDP/6100 (Mangler's
+> exact packet, just aimed at dead hardcoded IPs). Automated via
+> `Scripts/capture-handshake.ps1`.
+
 **Goal:** record exactly what the official Windows Ventrilo client does when it logs
 into `vent.example.com:6085`, so we can update VentMac's handshake. The old
 Mangler code we vendored contacts four hardcoded Ventrilo license-server IPs from

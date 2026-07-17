@@ -3,3 +3,6 @@
 *.xcodeproj
 VentMac.app/
 .DS_Store
+
+# Traffic captures — sensitive (creds/session/key material), never commit
+captures/
