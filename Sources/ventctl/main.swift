@@ -54,6 +54,14 @@ func parseOptions() -> Options {
     return o
 }
 
+if CommandLine.arguments.dropFirst().first == "devices" {
+    print("Inputs:")
+    for d in AudioDevices.inputs() { print("  • \(d.name)  [\(d.uid)]") }
+    print("Outputs:")
+    for d in AudioDevices.outputs() { print("  • \(d.name)  [\(d.uid)]") }
+    exit(0)
+}
+
 let opts = parseOptions()
 let client = V3Client.shared
 let player = V3AudioPlayer()

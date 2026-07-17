@@ -211,9 +211,26 @@ struct MainView: View {
 
 struct SettingsView: View {
     @EnvironmentObject var ptt: PTTManager
+    @EnvironmentObject var audio: AudioSettings
 
     var body: some View {
         Form {
+            Section("Audio") {
+                Picker("Microphone", selection: $audio.inputUID) {
+                    Text("System Default").tag("")
+                    ForEach(audio.inputs) { device in
+                        Text(device.name).tag(device.uid)
+                    }
+                }
+                Picker("Output", selection: $audio.outputUID) {
+                    Text("System Default").tag("")
+                    ForEach(audio.outputs) { device in
+                        Text(device.name).tag(device.uid)
+                    }
+                }
+                Button("Refresh Devices") { audio.refresh() }
+                    .controlSize(.small)
+            }
             Section("Push to Talk") {
                 HStack {
                     Text("PTT key")

@@ -228,6 +228,11 @@ public final class V3Transmitter {
     private let client: V3Client
     private let capture = V3AudioCapture()
 
+    /// Preferred microphone device UID (empty/nil = system default).
+    public var preferredInputUID: String? {
+        didSet { capture.preferredInputUID = preferredInputUID }
+    }
+
     public init(client: V3Client = .shared) {
         self.client = client
     }

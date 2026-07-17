@@ -27,6 +27,15 @@ final class ConnectionStore: ObservableObject {
 
     var serverDisplayName: String = ""
 
+    /// Wire audio-device selection: apply the persisted choice now and on change.
+    func bind(audio: AudioSettings) {
+        let apply: (String) -> String? = { $0.isEmpty ? nil : $0 }
+        transmitter.preferredInputUID = apply(audio.inputUID)
+        player.preferredOutputUID = apply(audio.outputUID)
+        audio.onInputChange = { [weak self] uid in self?.transmitter.preferredInputUID = apply(uid) }
+        audio.onOutputChange = { [weak self] uid in self?.player.setOutputDevice(uid: apply(uid)) }
+    }
+
     func connect(host: String, port: UInt16, username: String, password: String) {
         guard status == .disconnected else { return }
         status = .connecting

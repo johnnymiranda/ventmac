@@ -20,6 +20,7 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp Scripts/Info.plist "$APP/Contents/Info.plist"
 cp .build/release/VentMac "$APP/Contents/MacOS/VentMac"
+cp Scripts/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 
 if security find-identity -v -p codesigning 2>/dev/null | grep -q "$SIGN_ID"; then
     # No hardened runtime: library validation would reject the Homebrew

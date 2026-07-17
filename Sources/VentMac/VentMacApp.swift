@@ -6,14 +6,17 @@ struct VentMacApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     @StateObject private var store = ConnectionStore()
     @StateObject private var ptt = PTTManager()
+    @StateObject private var audio = AudioSettings()
 
     var body: some Scene {
         WindowGroup("VentMac") {
             ContentView()
                 .environmentObject(store)
                 .environmentObject(ptt)
+                .environmentObject(audio)
                 .frame(minWidth: 420, minHeight: 520)
                 .onAppear {
+                    store.bind(audio: audio)
                     ptt.onDown = { [weak store] in store?.startTalking() }
                     ptt.onUp = { [weak store] in store?.stopTalking() }
                     ptt.arm()
@@ -22,6 +25,7 @@ struct VentMacApp: App {
         Settings {
             SettingsView()
                 .environmentObject(ptt)
+                .environmentObject(audio)
         }
     }
 }

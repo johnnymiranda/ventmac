@@ -7,6 +7,10 @@ public final class V3AudioPlayer {
     private let engine = AVAudioEngine()
     private var started = false
 
+    /// Preferred output device UID (empty/nil = system default). Applied on the
+    /// next engine start; use `setOutputDevice` to switch while playing.
+    public var preferredOutputUID: String?
+
     private struct Voice {
         let node: AVAudioPlayerNode
         let format: AVAudioFormat
@@ -15,6 +19,26 @@ public final class V3AudioPlayer {
     private let lock = NSLock()
 
     public init() {}
+
+    /// Switch the output device live. Safe to call while connected.
+    public func setOutputDevice(uid: String?) {
+        lock.lock(); defer { lock.unlock() }
+        preferredOutputUID = uid
+        guard started else { return }
+        engine.stop()
+        started = false
+        applyOutputDevice()
+        do { try engine.start(); started = true }
+        catch { NSLog("V3AudioPlayer: restart failed: \(error)") }
+    }
+
+    private func applyOutputDevice() {
+        // Always target a device — the chosen one, or the system default when
+        // "System Default" is selected — so a prior pin is actively reverted.
+        guard let id = AudioDevices.resolve(uid: preferredOutputUID, output: true) else { return }
+        do { try engine.outputNode.auAudioUnit.setDeviceID(id) }
+        catch { NSLog("V3AudioPlayer: setDeviceID failed: \(error)") }
+    }
 
     public func play(userID: UInt16, rate: UInt32, channels: UInt8, pcm: Data) {
         guard !pcm.isEmpty else { return }
@@ -55,6 +79,7 @@ public final class V3AudioPlayer {
 
     private func startEngineIfNeeded() {
         guard !started else { return }
+        applyOutputDevice()
         engine.prepare()
         do {
             try engine.start()
@@ -90,12 +115,21 @@ public final class V3AudioCapture {
     private let engine = AVAudioEngine()
     private var running = false
 
+    /// Preferred input device UID (empty/nil = system default). Applied on the
+    /// next `start()`.
+    public var preferredInputUID: String?
+
     public init() {}
 
     /// Start capturing; `onChunk(pcm, rate)` fires on an audio thread.
     public func start(onChunk: @escaping (Data, UInt32) -> Void) throws {
         guard !running else { return }
         let input = engine.inputNode
+        // Target the chosen mic, or the system default when "System Default" is
+        // selected — so a reused capture instance reverts a prior device pin.
+        if let id = AudioDevices.resolve(uid: preferredInputUID, output: false) {
+            try? input.auAudioUnit.setDeviceID(id)
+        }
         let hwFormat = input.outputFormat(forBus: 0)
         let sampleRate = UInt32(hwFormat.sampleRate)
 
