@@ -1,6 +1,8 @@
 # Distributing VentMac via Homebrew
 
-VentMac ships as a **self-contained, notarized** macOS app in a personal Homebrew cask. The app bundles its own speex/speexdsp libraries (no `brew install` needed by users) and, once notarized, installs with no Gatekeeper prompts.
+> **Maintainer release runbook.** If you just want to *use* VentMac, see the [README](../README.md) — nothing in this file is needed to install it. This documents how the maintainer signs, notarizes, and publishes releases; throughout, "you" means the release maintainer.
+
+VentMac ships as a **self-contained, notarized** macOS app in a Homebrew cask. The app bundles its own speex/speexdsp libraries (no `brew install` needed by users) and, once notarized, installs with no Gatekeeper prompts.
 
 ## Release flow
 
@@ -29,22 +31,20 @@ Create an app-specific password at appleid.apple.com (Sign-In and Security -> Ap
 
 ```sh
 xcrun notarytool store-credentials ventmac-notary \
-    --apple-id johnnymiranda@gmail.com \
+    --apple-id <your-apple-id> \
     --team-id  YOURTEAMID \
     --password <app-specific-password>
 ```
 
+`<your-apple-id>` must be the Apple ID that owns the Developer ID certificate.
+
 (Your Team ID is on developer.apple.com -> Membership.)
 
-## Path: a personal tap
+## The tap
 
-The official `homebrew/cask` repo has notability requirements a niche app won't clear, so use your own tap:
+The official `homebrew/cask` repo has notability requirements a niche app won't clear, so releases go through the maintainer's own tap. That tap already exists and is public: [`johnnymiranda/homebrew-tap`](https://github.com/johnnymiranda/homebrew-tap), which holds `Casks/ventmac.rb` (a reference copy also lives in this repo at `Casks/ventmac.rb`). Homebrew maps `johnnymiranda/tap` to the `homebrew-tap` repo, so users install with `brew install --cask johnnymiranda/tap/ventmac`.
 
-1. Create a public repo **`johnnymiranda/homebrew-tap`**.
-2. Add **`Casks/ventmac.rb`** to it (a copy lives in this repo at `Casks/ventmac.rb`).
-3. Users install with `brew install --cask johnnymiranda/tap/ventmac` (Homebrew maps `johnnymiranda/tap` -> the `homebrew-tap` repo).
-
-Each release: cut a GitHub release with the zip, then bump `version` + `sha256` in the tap's cask.
+Each release: cut a GitHub release with the zip, then bump `version` + `sha256` in the tap's cask. (To publish under a different account, create a `<account>/homebrew-tap` repo and use that name instead.)
 
 ## Files in this repo
 
@@ -53,6 +53,6 @@ Each release: cut a GitHub release with the zip, then bump `version` + `sha256` 
 - `Scripts/package-release.sh` — zips the stapled app and prints the sha256
 - `Casks/ventmac.rb` — the cask definition (copy into your tap repo)
 
-## Nothing here has been published
+## Published state
 
-No GitHub release, tap repo, or public artifact has been created. Everything above is staged for you to run once the Developer ID cert and notarytool credentials are in place.
+VentMac is live: the repo is public, `v0.1.0` is [released](https://github.com/johnnymiranda/ventmac/releases/latest) with a notarized zip, and the tap is published — `brew install --cask johnnymiranda/tap/ventmac` works today. The runbook above is how subsequent releases are cut.

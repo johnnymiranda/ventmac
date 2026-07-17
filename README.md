@@ -15,9 +15,7 @@ I've been gaming with the same group for years, and they've never left Ventrilo 
 - Native SwiftUI app — no Wine, no Windows binaries
 - Connects to Ventrilo 3.x servers (Speex codec)
 - Channel tree with users and live talk indicators
-- **Global push-to-talk** that works over fullscreen games:
-  - Default: a keyboard hotkey (Carbon `RegisterEventHotKey`) — works everywhere, **no permissions required**
-  - Optional: mouse side-buttons (CGEventTap) — needs Input Monitoring
+- **Global push-to-talk** that works over fullscreen games — a keyboard hotkey by default (no permissions needed) or a mouse side-button ([details](#global-ptt))
 - Selectable microphone and output device
 - Server password stored in the macOS Keychain
 
@@ -37,7 +35,7 @@ brew install --cask johnnymiranda/tap/ventmac
 
 Open VentMac, fill in the server **host, port, and username** (plus a **password** if the server requires one), and click **Connect**. Double-click a channel to join it, then hold your push-to-talk key to speak.
 
-Your server password is saved in the **macOS Keychain** — never in plain text — and filled in automatically next time. Keychain access is tied to the app's code signature, so macOS may ask permission the first time a newly-updated build reads the saved password; click **Always Allow** and it won't ask again. To clear a saved password, delete the `com.cryptexlabs.ventmac` entry in Keychain Access.
+Your server password is saved in the **macOS Keychain** — never in plain text — and filled in automatically next time. Keychain access is tied to the app's code signature, so macOS may ask permission the first time a new version of VentMac reads the saved password (for example, after an update); click **Always Allow** and it won't ask again. To clear a saved password, delete the `com.cryptexlabs.ventmac` entry in Keychain Access.
 
 ## Build from source
 
@@ -72,7 +70,17 @@ Two tiers, chosen automatically by the kind of binding you set in Settings:
 
 ## Protocol notes
 
-VentMac speaks the Ventrilo 3.x wire protocol via the vendored `libventrilo3`. The protocol was originally reverse-engineered for interoperability by the Mangler project and by [Luigi Auriemma](https://aluigi.altervista.org/) (packet encryption). This project reuses that already-public work; the only additional reverse engineering was reading two interoperability constants (a client version string and the current auth-server hostnames) needed to talk to present-day 3.1.0 servers. See `docs/HANDSHAKE-FINDINGS.md` for the details.
+VentMac speaks the Ventrilo 3.x wire protocol via the vendored `libventrilo3`. The protocol was reverse-engineered for interoperability by the Mangler project and by [Luigi Auriemma](https://aluigi.altervista.org/) (packet encryption); VentMac reuses that already-public work. Getting it talking to present-day 3.1.0 servers took a few small updates — see [`docs/HANDSHAKE-FINDINGS.md`](docs/HANDSHAKE-FINDINGS.md) for the details.
+
+## Documentation
+
+- [`docs/HANDSHAKE-FINDINGS.md`](docs/HANDSHAKE-FINDINGS.md) — how the Ventrilo 3.1.0 login protocol works, and how VentMac was made to speak it
+- [`docs/HANDSHAKE-CAPTURE.md`](docs/HANDSHAKE-CAPTURE.md) — the packet-capture method used to reverse-engineer it (for re-capturing against other versions)
+- [`docs/DISTRIBUTION.md`](docs/DISTRIBUTION.md) — maintainer release runbook (signing, notarizing, publishing); not needed to use VentMac
+
+## Contributing
+
+Bug reports and pull requests are welcome via [GitHub Issues](https://github.com/johnnymiranda/ventmac/issues) and PRs; contributions are under GPL-3.0. For anything protocol- or crypto-sensitive you'd rather not post publicly, open a minimal issue and ask for a private channel.
 
 ## Attribution
 

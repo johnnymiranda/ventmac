@@ -1,12 +1,13 @@
-# Homebrew cask for VentMac. This lives in a personal tap
-# (johnnymiranda/homebrew-tap → Casks/ventmac.rb), installed with:
+# Reference copy of the VentMac cask. The cask users actually install from lives
+# in the tap (johnnymiranda/homebrew-tap → Casks/ventmac.rb):
 #   brew install --cask johnnymiranda/tap/ventmac
 #
-# Update `version` and `sha256` on each release. `Scripts/package-release.sh`
-# builds the artifact and prints the sha256 to paste here.
+# On each release, update `version` and `sha256` (Scripts/package-release.sh prints
+# the sha256). IMPORTANT: the published tap cask must pin the real sha256 — never
+# ship `sha256 :no_check`, which disables download integrity checking.
 cask "ventmac" do
   version "0.1.0"
-  sha256 :no_check # replace with the real sha256 from package-release.sh
+  sha256 :no_check # reference copy only — the tap cask pins the real sha256
 
   url "https://github.com/johnnymiranda/ventmac/releases/download/v#{version}/VentMac-#{version}.zip"
   name "VentMac"
