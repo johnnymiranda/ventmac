@@ -212,9 +212,16 @@ struct MainView: View {
 struct SettingsView: View {
     @EnvironmentObject var ptt: PTTManager
     @EnvironmentObject var audio: AudioSettings
+    @AppStorage("sounds.channelJoinLeave") private var joinLeaveSounds = true
 
     var body: some View {
         Form {
+            Section("Sounds") {
+                Toggle("Play a sound when someone joins or leaves your channel", isOn: $joinLeaveSounds)
+                Text("A quiet chime on join, a soft pop on leave — only for your current channel.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
             Section("Audio") {
                 Picker("Microphone", selection: $audio.inputUID) {
                     Text("System Default").tag("")

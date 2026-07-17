@@ -23,6 +23,8 @@ final class ConnectionStore: ObservableObject {
     private let client = V3Client.shared
     private let player = V3AudioPlayer()
     private let transmitter = V3Transmitter()
+    private let sounds = ChannelSounds()
+    private var soundsArmed = false   // suppress cues during the initial roster load
     private var streamTask: Task<Void, Never>?
 
     var serverDisplayName: String = ""
@@ -41,6 +43,7 @@ final class ConnectionStore: ObservableObject {
         status = .connecting
         lastError = nil
         roster = V3Roster()
+        soundsArmed = false
         serverDisplayName = "\(host):\(port)"
 
         // Voice frames go straight to the player from the consumer thread —
@@ -54,8 +57,10 @@ final class ConnectionStore: ObservableObject {
             let stream = client.connect(host: host, port: port,
                                         username: username, password: password)
             for await event in stream {
+                let before = roster
                 roster.apply(event)
                 handle(event)
+                channelCue(for: event, before: before)
             }
             stopTalking()
             player.shutdown()
@@ -106,6 +111,12 @@ final class ConnectionStore: ObservableObject {
                 serverCodec = "\(codec.name) @ \(codec.rate) Hz"
                 warnIfUnsupported(codec)
             }
+            // Arm join/leave cues only after the initial user list has settled,
+            // so connecting to a populated channel isn't a burst of sounds.
+            Task { [weak self] in
+                try? await Task.sleep(nanoseconds: 1_500_000_000)
+                self?.soundsArmed = true
+            }
         case .loginFailed(let message):
             lastError = message
             status = .disconnected
@@ -119,6 +130,27 @@ final class ConnectionStore: ObservableObject {
             if let codec = client.codec(forChannel: id) { warnIfUnsupported(codec) }
         case .disconnected:
             status = .disconnected
+        default:
+            break
+        }
+    }
+
+    /// Play a subtle cue when another user enters or leaves *your* channel.
+    /// Gated by the user's preference and armed only after the initial roster load.
+    private func channelCue(for event: V3CoreEvent, before: V3Roster) {
+        guard soundsArmed,
+              UserDefaults.standard.object(forKey: "sounds.channelJoinLeave") as? Bool ?? true
+        else { return }
+        switch event {
+        case .userUpserted(let u):
+            guard u.id != ownUserID else { return }
+            let wasHere = before.users[u.id]?.channelID == ownChannelID
+            let isHere = u.channelID == ownChannelID
+            if isHere && !wasHere { sounds.play(.join) }
+            else if wasHere && !isHere { sounds.play(.leave) }
+        case .userRemoved(let id):
+            guard id != ownUserID, before.users[id]?.channelID == ownChannelID else { return }
+            sounds.play(.leave)
         default:
             break
         }
