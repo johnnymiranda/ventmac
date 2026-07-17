@@ -41,8 +41,10 @@ public final class V3Client: @unchecked Sendable {
         let (stream, continuation) = AsyncStream.makeStream(of: V3CoreEvent.self,
                                                             bufferingPolicy: .unbounded)
 
-        if ProcessInfo.processInfo.environment["V3_DEBUG"] != nil {
-            v3_debuglevel(UInt32(V3_DEBUG_INFO | V3_DEBUG_SOCKET | V3_DEBUG_ERROR))
+        if let dbg = ProcessInfo.processInfo.environment["V3_DEBUG"] {
+            var mask = V3_DEBUG_INFO | V3_DEBUG_SOCKET | V3_DEBUG_ERROR
+            if dbg == "2" { mask |= V3_DEBUG_INTERNAL | V3_DEBUG_PACKET | V3_DEBUG_PACKET_PARSE }
+            v3_debuglevel(UInt32(mask))
         }
 
         let feeder = Thread { [weak self] in

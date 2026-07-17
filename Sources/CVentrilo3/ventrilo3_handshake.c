@@ -59,13 +59,49 @@ typedef struct {
 #endif
 } ventrilo3_auth_t;
 
+/*
+ * VentMac patch (2026-07-16): the four hardcoded ~2010 auth-server IPs are dead.
+ * A packet capture of the official Windows client vs a live 3.1.0 server
+ * (docs/HANDSHAKE-FINDINGS.md) shows it resolves syncN.ventrilo.com at runtime
+ * on UDP/6100 with the same UDCL type-5/6 exchange. vnum MUST equal N — it seeds
+ * the type-5/6 obfuscation (see ventrilo3_send_udp/recv_udp). Hosts below are DNS
+ * names; ventrilo3_resolve_auth() rewrites each to a dotted-quad before use.
+ */
 static ventrilo3_auth_t ventrilo3_auth[] = {
-    { 1,  "72.51.46.31",   6100 V3HPROXY_PARS },
-    { 2,  "64.34.178.178", 6100 V3HPROXY_PARS },
-    { 3,  "74.54.61.194",  6100 V3HPROXY_PARS },
-    { 4,  "70.85.110.242", 6100 V3HPROXY_PARS },
-    { -1, NULL,            0    V3HPROXY_PARS }
+    { 5,  "sync5.ventrilo.com", 6100 V3HPROXY_PARS },
+    { 6,  "sync6.ventrilo.com", 6100 V3HPROXY_PARS },
+    { 7,  "sync7.ventrilo.com", 6100 V3HPROXY_PARS },
+    { 8,  "sync8.ventrilo.com", 6100 V3HPROXY_PARS },
+    { -1, NULL,                 0    V3HPROXY_PARS }
 };
+
+/*
+ * VentMac patch: resolve each auth host from DNS name to a dotted-quad string
+ * in place — downstream code (send loop, recv match) calls inet_addr on .host.
+ * Unresolved entries (e.g. sync7/sync8 currently have no A record) are blanked
+ * to "0.0.0.0"; the send loop skips those and they never match a real peer.
+ * Resolves once per process.
+ */
+static void ventrilo3_resolve_auth(void) {
+    static int done = 0;
+    struct addrinfo hints, *res;
+    int i;
+    if (done) return;
+    done = 1;
+    memset(&hints, 0, sizeof(hints));
+    hints.ai_family = AF_INET;
+    hints.ai_socktype = SOCK_DGRAM;
+    for (i = 0; ventrilo3_auth[i].host; i++) {
+        char ip[INET_ADDRSTRLEN] = "0.0.0.0";
+        res = NULL;
+        if (getaddrinfo(ventrilo3_auth[i].host, NULL, &hints, &res) == 0 && res) {
+            struct sockaddr_in *sa = (struct sockaddr_in *)(void *)res->ai_addr;
+            inet_ntop(AF_INET, &sa->sin_addr, ip, sizeof(ip));
+        }
+        if (res) freeaddrinfo(res);
+        ventrilo3_auth[i].host = strdup(ip);
+    }
+}
 
 uint32_t ventrilo3_hdr_udp(uint32_t type, uint8_t *buff, uint8_t *pck);
 uint32_t ventrilo3_send_udp(uint32_t sd, uint32_t vnum, uint32_t ip, uint16_t port, uint8_t *data, uint32_t len);
@@ -101,6 +137,9 @@ uint32_t ventrilo3_handshake(uint32_t ip, uint16_t port, uint8_t *handshake, uin
     struct  linger  ling = {1,1};
     uint32_t sd, i, len;
     uint8_t  sbuff[V3HBUFFSZ], rbuff[V3HBUFFSZ];
+    time_t   deadline;              /* VentMac patch */
+
+    ventrilo3_resolve_auth();       /* VentMac patch: DNS-resolve sync5..8 */
 
     sd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
     if(sd < 0) return(-1);
@@ -114,16 +153,22 @@ uint32_t ventrilo3_handshake(uint32_t ip, uint16_t port, uint8_t *handshake, uin
 
     ventrilo3_send_udp(sd, -1, ip, port, sbuff, 200);
     len = ventrilo3_recv_udp(sd, NULL, rbuff, V3HBUFFSZ, handshake_num);
-    if(len < 0) goto quit;
+    if((int32_t)len < 0) goto quit;   /* VentMac patch: signed timeout check */
 
     for(i = 0; ventrilo3_auth[i].host; i++) {
+        uint32_t aip = inet_addr(ventrilo3_auth[i].host);
+        if(aip == 0 || aip == INADDR_NONE) continue;  /* VentMac patch: skip unresolved */
         len = ventrilo3_hdr_udp(5, sbuff, rbuff);
-        ventrilo3_send_udp(sd, ventrilo3_auth[i].vnum, inet_addr(ventrilo3_auth[i].host), ventrilo3_auth[i].port, sbuff, len);
+        ventrilo3_send_udp(sd, ventrilo3_auth[i].vnum, aip, ventrilo3_auth[i].port, sbuff, len);
     }
 
+    /* VentMac patch: bound the wait so stray game-server packets can't spin us
+     * forever (each recv already has a 2s timeout; this caps the total). */
+    deadline = time(NULL) + 6;
     for(;;) {
+        if(time(NULL) >= deadline) break;
         len = ventrilo3_recv_udp(sd, (void *)&ventrilo3_auth, rbuff, V3HBUFFSZ, handshake_num);
-        if(len < 0) break;
+        if((int32_t)len < 0) break;   /* VentMac patch: signed timeout check */
         if(!len) continue;
         if(len < (0x5c + 16)) continue;
 #ifdef V3HPROXY
@@ -229,10 +274,12 @@ uint32_t ventrilo3_recv_udp(uint32_t sd, ventrilo3_auth_t *vauth, uint8_t *data,
     uint32_t ip, len, i, k, vnum, psz;
     uint8_t  tmp[4];
 
-    if(v3timeout(sd, 2) < 0) return(-1);
+    int32_t rc;                                        /* VentMac patch */
+    if(v3timeout(sd, 2) != 0) return((uint32_t)-1);    /* VentMac patch: v3timeout returns unsigned; check != 0, not < 0 */
     psz = sizeof(struct sockaddr_in);
-    len = recvfrom(sd, data, maxsz, 0, (struct sockaddr *)&peer, &psz);
-    if(len < 0) return(-1);
+    rc = recvfrom(sd, data, maxsz, 0, (struct sockaddr *)&peer, &psz);
+    if(rc < 0) return((uint32_t)-1);                   /* VentMac patch: recvfrom -1 was dead code under unsigned len */
+    len = (uint32_t)rc;
     if(!vauth) return(len);
 
     for(i = 0; vauth[i].host; i++) {

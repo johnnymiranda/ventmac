@@ -131,3 +131,39 @@ scp john@<windows-tailscale-host>:'C:/Users/John/code/ventmac/captures/vent-logi
 
 Triage dumps (`vent-udp`, `vent-convos`, `vent-dns`, `vent-tcp-opens`, `vent-snapshot`)
 live alongside it in `captures/` and are equally sensitive.
+
+---
+
+## Update 2026-07-16 (late) — handshake fixed on the Mac; new blocker = version gate
+
+Applied the phase-2 fix (`ventrilo3_handshake.c`) and re-ran `ventctl` against
+`vent.example.com:6085`. **The handshake, crypto, and TCP login now all work.**
+
+Changes made:
+- `ventrilo3_auth[]` now holds `sync5..sync8.ventrilo.com` (vnum 5–8); a new
+  `ventrilo3_resolve_auth()` DNS-resolves them at runtime; the send loop skips
+  entries that don't resolve (sync7/8).
+- Fixed the unsigned-timeout bug: `v3timeout()` returns `(uint32_t)-1`, so
+  `if(v3timeout(...) < 0)` and `if(len < 0)` after `recvfrom` were dead code and
+  fell through to a **blocking** `recvfrom()` — the real indefinite hang. Now
+  checked as signed, plus a 6s total deadline on the auth loop.
+
+Observed result (V3_DEBUG=2):
+- `authserver index: 0 -> 0` — handshake returned cleanly (was: infinite hang).
+- TCP login connected; server replied with a **68-byte type-0x06** packet that
+  **decrypted perfectly** to: `Incompatible version. Server is running version 3.1.0`.
+- Decrypting a clean app-level error proves the 64-byte key derivation, the
+  auth-server index (0 accepted), and the stream cipher are all correct.
+
+**Remaining blocker — client/proto version gate.** The 0x48 login carries
+`client_version[16]` (offset 40) and `proto_version[16]` (offset 104), originally
+`"3.0.5"` / `"3.0.0"`. Tried `"3.1.0"` and `"3.1.0.101"` for the client version and
+`"3.1.0"` for proto — wire dump confirms the bytes go out correctly — and the server
+**still** returns the same "Incompatible version" 0x06. So it validates an exact value
+we can't guess from the error string.
+
+**Next (needs the pcap on the Mac):** decrypt the official client's 0x48 login in
+`vent-login-*.pcapng` and read the literal `client_version` / `proto_version` bytes it
+sends; set them in `libventrilo3_message.h`. Decryption needs that session's 64-byte
+handshake key (derivable from the captured type-6 reply body + the sync server IP/vnum).
+Bring the pcap over (scp/Tailscale, see above) and this is a short exercise.
