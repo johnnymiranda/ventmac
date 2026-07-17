@@ -1,0 +1,5 @@
+module CSpeex [system] {
+    header "shim.h"
+    link "speex"
+    export *
+}
