@@ -237,22 +237,18 @@ public final class V3Transmitter {
         self.client = client
     }
 
-    /// Returns an error message on failure (transmit is rolled back).
+    /// Begins transmitting. Capture starts asynchronously (off the main thread),
+    /// so this returns immediately and never blocks the UI on a slow device.
     @discardableResult
     public func start() -> String? {
         guard !isTransmitting else { return nil }
         client.startTransmit()
-        do {
-            let client = self.client
-            try capture.start { pcm, rate in
-                client.sendPCM(pcm, rate: rate)
-            }
-            isTransmitting = true
-            return nil
-        } catch {
-            client.stopTransmit()
-            return "Microphone capture failed: \(error.localizedDescription)"
+        let client = self.client
+        capture.start { pcm, rate in
+            client.sendPCM(pcm, rate: rate)
         }
+        isTransmitting = true
+        return nil
     }
 
     public func stop() {
