@@ -170,10 +170,12 @@ public final class V3AudioPlayer {
 /// Captures microphone input and delivers 16-bit signed mono PCM chunks at
 /// the hardware sample rate. libventrilo3 resamples to the codec rate.
 public final class V3AudioCapture {
-    // Recreated per start; only touched on `queue`.
     private var engine = AVAudioEngine()
     private let queue = DispatchQueue(label: "com.cryptexlabs.ventmac.capture")
     private var running = false
+    private var isConfigured = false
+    private var configuredUID = ""            // device the tap/engine is set up for
+    private var onChunk: ((Data, UInt32) -> Void)?
 
     /// Preferred input device UID (empty/nil = system default). Applied on the
     /// next `start()`.
@@ -181,58 +183,64 @@ public final class V3AudioCapture {
 
     public init() {}
 
-    /// Start capturing; `onChunk(pcm, rate)` fires on an audio thread.
+    /// Begin capturing; `onChunk(pcm, rate)` fires on an audio thread.
     ///
-    /// All engine setup runs OFF the main thread: initializing AVAudioEngine on
-    /// a slow or misbehaving input device (a Bluetooth mic, a webcam like the
-    /// Insta360) can block `prepare()` for seconds, and must never freeze the UI.
-    public func start(onChunk: @escaping (Data, UInt32) -> Void) {
-        let preferred = preferredInputUID
+    /// All engine work runs OFF the main thread — initializing on a slow/bad
+    /// input device can block prepare() for seconds and must never freeze the UI.
+    /// The engine is kept WARM across push-to-talk presses: it's only rebuilt
+    /// when the input device actually changes (rebuilding a reused engine's
+    /// device via setDeviceID is what hangs prepare(); a fresh engine every
+    /// press adds startup latency to the front of every transmission).
+    public func start(onChunkCb: @escaping (Data, UInt32) -> Void) {
+        let preferred = preferredInputUID ?? ""
         queue.async { [weak self] in
             guard let self, !self.running else { return }
-            // Fresh engine each start — reconfiguring a reused engine's input
-            // device (auAudioUnit.setDeviceID) is what hangs prepare().
-            self.engine = AVAudioEngine()
-            let input = self.engine.inputNode
-            #if os(macOS)
-            if let id = AudioDevices.resolve(uid: preferred, output: false) {
-                try? input.auAudioUnit.setDeviceID(id)
-            }
-            #endif
-            let hwFormat = input.outputFormat(forBus: 0)
-            guard hwFormat.sampleRate > 0, hwFormat.channelCount > 0 else {
-                NSLog("V3AudioCapture: input device has no valid format; not starting")
-                return
-            }
-            let sampleRate = UInt32(hwFormat.sampleRate)
-            let frames = AVAudioFrameCount(hwFormat.sampleRate * 0.04)   // ~40ms chunks
-            input.installTap(onBus: 0, bufferSize: frames, format: hwFormat) { buffer, _ in
-                guard let floats = buffer.floatChannelData?[0] else { return }
-                let n = Int(buffer.frameLength)
-                guard n > 0 else { return }
-                var pcm = Data(count: n * 2)
-                pcm.withUnsafeMutableBytes { (raw: UnsafeMutableRawBufferPointer) in
-                    let out = raw.bindMemory(to: Int16.self)
-                    for i in 0..<n {
-                        let v = max(-1.0, min(1.0, floats[i]))
-                        out[i] = Int16(v * 32767.0)
-                    }
+            self.onChunk = onChunkCb
+
+            if !self.isConfigured || self.configuredUID != preferred {
+                // Device changed (or first run): build a fresh engine + tap.
+                self.engine = AVAudioEngine()
+                let input = self.engine.inputNode
+                #if os(macOS)
+                if let id = AudioDevices.resolve(uid: preferred.isEmpty ? nil : preferred, output: false) {
+                    try? input.auAudioUnit.setDeviceID(id)
                 }
-                onChunk(pcm, sampleRate)
+                #endif
+                let hwFormat = input.outputFormat(forBus: 0)
+                guard hwFormat.sampleRate > 0, hwFormat.channelCount > 0 else {
+                    NSLog("V3AudioCapture: input device has no valid format; not starting")
+                    return
+                }
+                let sampleRate = UInt32(hwFormat.sampleRate)
+                let frames = AVAudioFrameCount(hwFormat.sampleRate * 0.04)   // ~40ms chunks
+                input.installTap(onBus: 0, bufferSize: frames, format: hwFormat) { [weak self] buffer, _ in
+                    guard let self, let floats = buffer.floatChannelData?[0] else { return }
+                    let n = Int(buffer.frameLength)
+                    guard n > 0 else { return }
+                    var pcm = Data(count: n * 2)
+                    pcm.withUnsafeMutableBytes { (raw: UnsafeMutableRawBufferPointer) in
+                        let out = raw.bindMemory(to: Int16.self)
+                        for i in 0..<n {
+                            let v = max(-1.0, min(1.0, floats[i]))
+                            out[i] = Int16(v * 32767.0)
+                        }
+                    }
+                    self.onChunk?(pcm, sampleRate)
+                }
+                self.isConfigured = true
+                self.configuredUID = preferred
             }
+
             self.engine.prepare()
             do { try self.engine.start(); self.running = true }
-            catch {
-                NSLog("V3AudioCapture: start failed: \(error)")
-                input.removeTap(onBus: 0)
-            }
+            catch { NSLog("V3AudioCapture: start failed: \(error)") }
         }
     }
 
     public func stop() {
         queue.async { [weak self] in
             guard let self, self.running else { return }
-            self.engine.inputNode.removeTap(onBus: 0)
+            // Keep the tap + configuration so the next press restarts warm.
             self.engine.stop()
             self.running = false
         }

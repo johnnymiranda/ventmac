@@ -18,6 +18,7 @@ final class ConnectionStore: ObservableObject {
     @Published var codecWarning: String?
     @Published var transmitting = false
     @Published var serverCodec: String = ""
+    @Published var ping: UInt16?            // round-trip ms to the server
     @Published var passwordPromptChannel: V3Channel?
 
     /// "Mute Sound" — silence all incoming audio.
@@ -136,8 +137,11 @@ final class ConnectionStore: ObservableObject {
         case .movedToChannel(let id):
             ownChannelID = id
             if let codec = client.codec(forChannel: id) { warnIfUnsupported(codec) }
+        case .ping(let ms):
+            ping = ms == 0xffff ? nil : ms   // 0xffff = no measurement yet
         case .disconnected:
             status = .disconnected
+            ping = nil
         default:
             break
         }

@@ -94,6 +94,13 @@ struct MainView: View {
                 Text(store.serverCodec).font(.caption).foregroundStyle(.secondary)
             }
             Spacer()
+            if let ping = store.ping {
+                let color: Color = ping < 80 ? .green : (ping < 200 ? .yellow : .red)
+                Label("\(ping) ms", systemImage: "dot.radiowaves.left.and.right")
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(color)
+                    .help("Round-trip time to the server")
+            }
             Button("Disconnect") { store.disconnect() }
         }
         .padding(12)
