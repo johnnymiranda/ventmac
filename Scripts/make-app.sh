@@ -24,8 +24,8 @@ cp Scripts/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 
 BIN="$APP/Contents/MacOS/VentMac"
 
-# --- Bundle + relink speex dylibs to @rpath so the app is self-contained ---
-for old in $(otool -L "$BIN" | awk '/speex/{print $1}'); do
+# --- Bundle + relink codec dylibs (speex/speexdsp/opus) to @rpath so the app is self-contained ---
+for old in $(otool -L "$BIN" | awk '/speex|opus/{print $1}'); do
     base=$(basename "$old")
     cp -L "$old" "$APP/Contents/Frameworks/$base"
     chmod u+w "$APP/Contents/Frameworks/$base"

@@ -63,7 +63,7 @@ public struct V3Codec: Sendable {
     /// Codec IDs this build can encode/decode (matches the HAVE_* flags in
     /// Package.swift). 3 = Speex. GSM (0) / Opus (1,2) would need their libs
     /// vendored and the corresponding HAVE_ defines enabled.
-    public static let supportedCodecIDs: Set<UInt8> = [3]
+    public static let supportedCodecIDs: Set<UInt8> = [1, 2, 3]  // Opus (1,2) + Speex (3)
 
     public var isSupported: Bool { Self.supportedCodecIDs.contains(codecID) }
 

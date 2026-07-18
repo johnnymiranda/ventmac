@@ -203,8 +203,10 @@ struct MainView: View {
             .onTapGesture(count: 2) { store.join(channel) }
             .help("Double-click to join")
         case .user(let user):
-            let isTalking = store.roster.talking.contains(user.id)
             let isMe = user.id == store.ownUserID
+            // The server doesn't echo our own TALK_START back to us, so light our
+            // own row from the local transmit state instead.
+            let isTalking = store.roster.talking.contains(user.id) || (isMe && store.transmitting)
             HStack(spacing: 6) {
                 Image(systemName: isTalking ? "speaker.wave.2.fill" : "person")
                     .foregroundStyle(isTalking ? .green : .secondary)

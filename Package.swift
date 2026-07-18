@@ -17,13 +17,21 @@ let package = Package(
             pkgConfig: "speexdsp",
             providers: [.brew(["speexdsp"])]
         ),
+        .systemLibrary(
+            name: "COpus",
+            path: "Sources/COpus",
+            pkgConfig: "opus",
+            providers: [.brew(["opus"])]
+        ),
         .target(
             name: "CVentrilo3",
-            dependencies: ["CSpeex", "CSpeexDSP"],
+            dependencies: ["CSpeex", "CSpeexDSP", "COpus"],
             cSettings: [
                 .define("NO_AUTOMAKE"),
                 .define("HAVE_SPEEX", to: "1"),
                 .define("HAVE_SPEEX_DSP", to: "1"),
+                .define("HAVE_OPUS", to: "1"),
+                .define("HAVE_OPUS_H", to: "1"),
                 .headerSearchPath("."),
                 .unsafeFlags([
                     "-Wno-implicit-function-declaration",
