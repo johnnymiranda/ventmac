@@ -414,7 +414,7 @@ final class ConnectionStore: ObservableObject {
             reconnectAttempt = 0
             connectStatus = ""
             ownUserID = client.ownUserID
-            if UserDefaults.standard.object(forKey: "sounds.connect") as? Bool ?? true {
+            if SoundPref.connect.enabled {
                 sounds.play(.connect)
             }
             if let codec = client.codec(forChannel: 0) {
@@ -488,12 +488,12 @@ final class ConnectionStore: ObservableObject {
         case .paged(let uid):
             let name = roster.users[uid]?.name ?? "someone"
             sounds.play(.page)
-            if UserDefaults.standard.object(forKey: "sounds.pageSpeech") as? Bool ?? true {
+            if SoundPref.pageSpeech.enabled {
                 speak("Page from \(name)")
             }
             appendChat(ChatEntry(kind: .notice("📟 Page from \(name)")))
         case .ttsMessage(_, let text):
-            if UserDefaults.standard.object(forKey: "sounds.ttsReceive") as? Bool ?? true {
+            if SoundPref.ttsReceive.enabled {
                 speak(text)
             }
         case .disconnected:
@@ -528,9 +528,7 @@ final class ConnectionStore: ObservableObject {
     /// Play a subtle cue when another user enters or leaves *your* channel.
     /// Gated by the user's preference and armed only after the initial roster load.
     private func channelCue(for event: V3CoreEvent, before: V3Roster) {
-        guard soundsArmed,
-              UserDefaults.standard.object(forKey: "sounds.channelJoinLeave") as? Bool ?? true
-        else { return }
+        guard soundsArmed, SoundPref.joinLeave.enabled else { return }
         switch event {
         case .userUpserted(let u):
             guard u.id != ownUserID else { return }

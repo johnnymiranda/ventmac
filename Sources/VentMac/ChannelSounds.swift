@@ -1,5 +1,19 @@
 import AppKit
 
+/// Sound/speech preference keys, read in ConnectionStore's event path and
+/// bound by SettingsView — one place for the key strings so they can't drift.
+/// Convention: every preference here defaults to ON when unset.
+enum SoundPref: String {
+    case connect = "sounds.connect"
+    case joinLeave = "sounds.channelJoinLeave"
+    case pageSpeech = "sounds.pageSpeech"
+    case ttsReceive = "sounds.ttsReceive"
+
+    var enabled: Bool {
+        UserDefaults.standard.object(forKey: rawValue) as? Bool ?? true
+    }
+}
+
 /// Subtle cues when someone enters or leaves your channel. Uses quiet built-in
 /// macOS system sounds at reduced volume — deliberately unobtrusive.
 @MainActor

@@ -570,10 +570,11 @@ struct SettingsView: View {
     @EnvironmentObject var ptt: PTTManager
     @EnvironmentObject var audio: AudioSettings
     @EnvironmentObject var store: ConnectionStore
-    @AppStorage("sounds.channelJoinLeave") private var joinLeaveSounds = true
-    @AppStorage("sounds.connect") private var connectSound = true
-    @AppStorage("sounds.pageSpeech") private var pageSpeech = true
-    @AppStorage("sounds.ttsReceive") private var ttsReceive = true
+    // Defaults are ON when unset — the SoundPref convention; keep `= true` here.
+    @AppStorage(SoundPref.joinLeave.rawValue) private var joinLeaveSounds = true
+    @AppStorage(SoundPref.connect.rawValue) private var connectSound = true
+    @AppStorage(SoundPref.pageSpeech.rawValue) private var pageSpeech = true
+    @AppStorage(SoundPref.ttsReceive.rawValue) private var ttsReceive = true
     @AppStorage("identity.comment") private var comment = ""
     @AppStorage("identity.url") private var url = ""
 
