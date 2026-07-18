@@ -171,7 +171,11 @@ Task {
             if !text.isEmpty { print("MOTD: \(text.prefix(500))") }
         case .disconnected:
             print("disconnected")
-        case .channelUpserted, .channelRemoved, .audio, .ping:
+        case .chatMessage(let uid, let msg):
+            if opts.stay { print("💬 \(uid == 0 ? "[server]" : roster.users[uid]?.name ?? "#\(uid)"): \(msg)") }
+        case .paged(let uid):
+            print("📟 page from \(roster.users[uid]?.name ?? "#\(uid)")")
+        default:
             break
         }
     }

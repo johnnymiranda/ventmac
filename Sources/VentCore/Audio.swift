@@ -20,6 +20,7 @@ public final class V3AudioPlayer {
     }
     private var voices: [UInt16: Voice] = [:]
     private var mutedFlag = false
+    private var mutedUsers: Set<UInt16> = []
     private let lock = NSLock()
 
     public init() {
@@ -77,6 +78,19 @@ public final class V3AudioPlayer {
         lock.lock(); mutedFlag = muted; lock.unlock()
     }
 
+    /// Local per-user mute: drop this user's audio only. Thread-safe.
+    public func setUserMuted(_ userID: UInt16, _ muted: Bool) {
+        lock.lock()
+        if muted { mutedUsers.insert(userID) } else { mutedUsers.remove(userID) }
+        lock.unlock()
+    }
+
+    /// User IDs are per-session — call at the start of each session so stale
+    /// IDs from the previous connection can't mute the wrong person.
+    public func clearUserMutes() {
+        lock.lock(); mutedUsers.removeAll(); lock.unlock()
+    }
+
     /// Switch the output device live. Safe to call while connected.
     public func setOutputDevice(uid: String?) {
         lock.lock(); defer { lock.unlock() }
@@ -100,7 +114,7 @@ public final class V3AudioPlayer {
     public func play(userID: UInt16, rate: UInt32, channels: UInt8, pcm: Data) {
         guard !pcm.isEmpty else { return }
         lock.lock(); defer { lock.unlock() }
-        if mutedFlag { return }
+        if mutedFlag || mutedUsers.contains(userID) { return }
 
         let ch = AVAudioChannelCount(max(1, channels))
         let voice = voiceFor(userID: userID, rate: Double(rate), channels: ch)

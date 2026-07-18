@@ -211,11 +211,98 @@ public final class V3Client: @unchecked Sendable {
             return .motd(motd)
         case V3_EVENT_PING.rawValue:
             return .ping(e.ping)
+        case V3_EVENT_CHAT_JOIN.rawValue:
+            return .chatJoined(userID: e.user.id)
+        case V3_EVENT_CHAT_LEAVE.rawValue:
+            return .chatLeft(userID: e.user.id)
+        case V3_EVENT_CHAT_MESSAGE.rawValue:
+            return .chatMessage(userID: e.user.id, message: eventChatMessage(e))
+        case V3_EVENT_PRIVATE_CHAT_START.rawValue:
+            return .privateChatStarted(peer: privchatPeer(e))
+        case V3_EVENT_PRIVATE_CHAT_END.rawValue:
+            return .privateChatEnded(peer: privchatPeer(e))
+        case V3_EVENT_PRIVATE_CHAT_MESSAGE.rawValue:
+            // user2 is the message's sender; user1/user2 are the session pair.
+            return .privateChatMessage(peer: privchatPeer(e),
+                                       fromSelf: e.user.privchat_user2 == v3_get_user_id(),
+                                       message: eventChatMessage(e))
+        case V3_EVENT_PRIVATE_CHAT_AWAY.rawValue:
+            return .privateChatAway(peer: privchatPeer(e))
+        case V3_EVENT_PRIVATE_CHAT_BACK.rawValue:
+            return .privateChatBack(peer: privchatPeer(e))
+        case V3_EVENT_USER_PAGE.rawValue:
+            return .paged(fromUser: e.user.id)
+        case V3_EVENT_TEXT_TO_SPEECH_MESSAGE.rawValue:
+            return .ttsMessage(userID: e.user.id, message: eventChatMessage(e))
+        case V3_EVENT_USER_GLOBAL_MUTE_CHANGED.rawValue, V3_EVENT_USER_CHANNEL_MUTE_CHANGED.rawValue:
+            // Refetch so the roster picks up the new mute flags.
+            guard let u = v3_get_user(e.user.id) else { return nil }
+            defer { v3_free_user(u) }
+            return .userUpserted(V3User(c: u.pointee))
         case V3_EVENT_DISCONNECT.rawValue:
             return .disconnected
         default:
             return nil
         }
+    }
+
+    /// The chat text lives in the event-data union's `chatmessage` array,
+    /// which sits at offset 0 like the other union members we read.
+    private static func eventChatMessage(_ e: v3_event) -> String {
+        guard let d = e.data else { return "" }
+        return String(cString: UnsafeRawPointer(d).assumingMemoryBound(to: CChar.self))
+    }
+
+    /// Private-chat events carry the session's (user1, user2) pair; the peer is
+    /// whichever one isn't us.
+    private static func privchatPeer(_ e: v3_event) -> UInt16 {
+        let me = v3_get_user_id()
+        return e.user.privchat_user1 == me ? e.user.privchat_user2 : e.user.privchat_user1
+    }
+}
+
+// MARK: - Text chat / pages / phantoms / presence
+
+extension V3Client {
+    public func joinChat() { v3_join_chat() }
+    public func leaveChat() { v3_leave_chat() }
+
+    public func sendChatMessage(_ message: String) {
+        guard !message.isEmpty else { return }
+        let m = strdup(message); defer { free(m) }
+        v3_send_chat_message(m)
+    }
+
+    public func startPrivateChat(with userID: UInt16) { v3_start_privchat(userID) }
+    public func endPrivateChat(with userID: UInt16) { v3_end_privchat(userID) }
+
+    public func sendPrivateChatMessage(to userID: UInt16, _ message: String) {
+        guard !message.isEmpty else { return }
+        let m = strdup(message); defer { free(m) }
+        v3_send_privchat_message(userID, m)
+    }
+
+    public func sendPage(to userID: UInt16) { v3_send_user_page(userID) }
+
+    public func addPhantom(in channelID: UInt16) { v3_phantom_add(channelID) }
+    public func removePhantom(in channelID: UInt16) { v3_phantom_remove(channelID) }
+
+    /// Set our comment / URL shown next to our name in everyone's tree.
+    /// `silent` suppresses the server's TTS/event announcement of the change.
+    public func setText(comment: String, url: String, silent: Bool = true) {
+        let c = strdup(comment); let u = strdup(url); let i = strdup("")
+        defer { free(c); free(u); free(i) }
+        v3_set_text(c, u, i, silent ? 1 : 0)
+    }
+
+    /// Per-user playback volume, applied by the library at decode time.
+    /// 0…158, 79 = unity (matches the original client's slider range).
+    public func setUserVolume(_ userID: UInt16, level: Int32) {
+        v3_set_volume_user(userID, level)
+    }
+
+    public func userVolume(_ userID: UInt16) -> UInt8 {
+        v3_get_volume_user(userID)
     }
 }
 
@@ -256,5 +343,80 @@ public final class V3Transmitter {
         capture.stop()
         client.stopTransmit()
         isTransmitting = false
+    }
+}
+
+// MARK: - Voice-activated transmitter
+
+/// Continuous-capture transmitter gated by VoxGate: the mic runs the whole
+/// time it's enabled, but audio only goes to the server while the gate is
+/// open (level above threshold, plus hysteresis/hangover/pre-roll).
+public final class V3VoxTransmitter {
+    public private(set) var isRunning = false
+    private let client: V3Client
+    private let capture = V3AudioCapture()
+    private let gate = VoxGate()
+    private var gateOpen = false
+
+    /// Mic level (dBFS) and gate state, delivered on the audio thread —
+    /// marshal to the main thread before touching UI.
+    public var onLevel: ((Float, Bool) -> Void)?
+
+    public var preferredInputUID: String? {
+        didSet { capture.preferredInputUID = preferredInputUID }
+    }
+
+    /// Open threshold in dBFS; close threshold trails by 10 dB for hysteresis.
+    public var sensitivityDBFS: Float {
+        get { gate.config.openThresholdDBFS }
+        set {
+            gate.config.openThresholdDBFS = newValue
+            gate.config.closeThresholdDBFS = newValue - 10
+        }
+    }
+
+    /// Hard mute: closes the gate (stopping transmit) but keeps metering.
+    public var muted: Bool {
+        get { gate.muted }
+        set { gate.muted = newValue }
+    }
+
+    public init(client: V3Client = .shared) {
+        self.client = client
+    }
+
+    public func start() {
+        guard !isRunning else { return }
+        isRunning = true
+        gate.reset()
+        gateOpen = false
+        capture.start { [weak self] pcm, rate in
+            guard let self else { return }
+            let action = self.gate.process(pcm: pcm, rate: rate)
+            switch action {
+            case .idle:
+                break
+            case .open(let chunks):
+                self.client.startTransmit()
+                self.gateOpen = true
+                for chunk in chunks { self.client.sendPCM(chunk.pcm, rate: chunk.rate) }
+            case .transmit(let chunk):
+                self.client.sendPCM(chunk.pcm, rate: chunk.rate)
+            case .close:
+                self.client.stopTransmit()
+                self.gateOpen = false
+            }
+            self.onLevel?(self.gate.lastLevelDBFS, self.gateOpen)
+        }
+    }
+
+    public func stop() {
+        guard isRunning else { return }
+        capture.stop()
+        if gateOpen {
+            client.stopTransmit()
+            gateOpen = false
+        }
+        isRunning = false
     }
 }

@@ -13,11 +13,16 @@ I've been gaming with the same group for years, and they've never left Ventrilo 
 ## Features
 
 - Native SwiftUI app — no Wine, no Windows binaries
-- Connects to Ventrilo 3.x servers (Speex codec)
-- Channel tree with users and live talk indicators
+- Connects to Ventrilo 3.x servers (Speex and Opus codecs)
+- Channel tree with users, live talk indicators, comments, and status badges
 - **Global push-to-talk** that works over fullscreen games — a keyboard hotkey by default (no permissions needed) or a mouse side-button ([details](#global-ptt))
-- Selectable microphone and output device
-- Server password stored in the macOS Keychain
+- **Voice activation (VOX)** as an alternative to push-to-talk, with a sensitivity slider and live mic meter
+- **Auto-reconnect** — dropped connections retry with backoff and rejoin your channel
+- **Text chat** — the channel chat window and 1:1 private chats, in a collapsible pane
+- **Per-user volume and mute** — right-click any user
+- Saved server list with per-server passwords in the macOS Keychain
+- Paging (send and receive, spoken aloud), phantoms, MOTD, and your own comment/URL
+- Selectable microphone and output device; quiet connect/join/leave sounds (toggleable)
 
 ## Install
 
@@ -33,9 +38,9 @@ brew install --cask johnnymiranda/tap/ventmac
 
 ## Connecting to a server
 
-Open VentMac, fill in the server **host, port, and username** (plus a **password** if the server requires one), and click **Connect**. Double-click a channel to join it, then hold your push-to-talk key to speak.
+Open VentMac, click **Add Server…**, and fill in a name, the server **host, port, and username** (plus a **password** if the server requires one). Select the server and click **Connect** — or double-click it. Double-click a channel to join it, then hold your push-to-talk key to speak (or switch to voice activation in Settings).
 
-Your server password is saved in the **macOS Keychain** — never in plain text — and filled in automatically next time. Keychain access is tied to the app's code signature, so macOS may ask permission the first time a new version of VentMac reads the saved password (for example, after an update); click **Always Allow** and it won't ask again. To clear a saved password, delete the `com.cryptexlabs.ventmac` entry in Keychain Access.
+Server passwords are saved in the **macOS Keychain** — never in plain text — and filled in automatically next time. Keychain access is tied to the app's code signature, so macOS may ask permission the first time a new version of VentMac reads a saved password (for example, after an update); click **Always Allow** and it won't ask again. To clear saved passwords, delete the `com.cryptexlabs.ventmac` entries in Keychain Access.
 
 ## Build from source
 
@@ -56,10 +61,10 @@ Packaging and notarizing a release is documented in [`docs/DISTRIBUTION.md`](doc
 
 | Target | What |
 |---|---|
-| `CVentrilo3` | Vendored `libventrilo3` (protocol, crypto, Speex codec) |
-| `VentCore` | Swift wrapper: event pump → `AsyncStream`, roster, audio, transmit, device enumeration |
+| `CVentrilo3` | Vendored `libventrilo3` (protocol, crypto, Speex/Opus codecs) |
+| `VentCore` | Swift wrapper: event pump → `AsyncStream`, roster, audio, transmit (PTT + VOX), chat/pages/phantoms, device enumeration |
 | `ventctl` | CLI: `connect`, dump channel tree/codec, join, listen, spacebar PTT, `devices` |
-| `VentMac` | SwiftUI app: connect UI, channel tree, talk indicators, global PTT, device pickers |
+| `VentMac` | SwiftUI app: server list, channel tree, chat pane, talk indicators, global PTT, VOX, device pickers |
 
 ## Global PTT
 

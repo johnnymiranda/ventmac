@@ -7,6 +7,7 @@ struct VentMacApp: App {
     @StateObject private var store = ConnectionStore()
     @StateObject private var ptt = PTTManager()
     @StateObject private var audio = AudioSettings()
+    @StateObject private var serverList = ServerList()
 
     var body: some Scene {
         WindowGroup("VentMac") {
@@ -14,6 +15,7 @@ struct VentMacApp: App {
                 .environmentObject(store)
                 .environmentObject(ptt)
                 .environmentObject(audio)
+                .environmentObject(serverList)
                 .frame(minWidth: 420, minHeight: 520)
                 .onAppear {
                     store.bind(audio: audio)
@@ -24,6 +26,7 @@ struct VentMacApp: App {
         }
         Settings {
             SettingsView()
+                .environmentObject(store)
                 .environmentObject(ptt)
                 .environmentObject(audio)
         }
@@ -44,7 +47,7 @@ struct ContentView: View {
 
     var body: some View {
         switch store.status {
-        case .connected:
+        case .connected, .reconnecting:
             MainView()
         default:
             ConnectView()

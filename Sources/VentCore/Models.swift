@@ -42,7 +42,16 @@ public struct V3User: Identifiable, Hashable, Sendable {
     public let name: String
     public let phonetic: String
     public let comment: String
+    public let url: String
     public let rankID: UInt16
+    public let isGuest: Bool
+    /// Server-side mutes applied by an admin (shown as G / N flags in Ventrilo).
+    public let globalMute: Bool
+    public let channelMute: Bool
+    /// Non-zero real_user_id marks a phantom presence of another user.
+    public let isPhantom: Bool
+    public let acceptsPages: Bool
+    public let acceptsPrivateChat: Bool
 
     init(c: v3_user) {
         id = c.id
@@ -50,7 +59,14 @@ public struct V3User: Identifiable, Hashable, Sendable {
         name = String(optionalCString: c.name)
         phonetic = String(optionalCString: c.phonetic)
         comment = String(optionalCString: c.comment)
+        url = String(optionalCString: c.url)
         rankID = c.rank_id
+        isGuest = c.guest != 0
+        globalMute = c.global_mute != 0
+        channelMute = c.channel_mute != 0
+        isPhantom = c.real_user_id != 0
+        acceptsPages = c.accept_pages != 0
+        acceptsPrivateChat = c.accept_u2u != 0
     }
 }
 
@@ -92,6 +108,20 @@ public enum V3CoreEvent: Sendable {
     case audio(userID: UInt16, rate: UInt32, channels: UInt8, pcm: Data)
     case motd(String)
     case ping(UInt16)
+    // Channel-wide text chat. userID 0 = server/RCON message.
+    case chatJoined(userID: UInt16)
+    case chatLeft(userID: UInt16)
+    case chatMessage(userID: UInt16, message: String)
+    // 1:1 private chat, keyed by the remote peer's user ID.
+    case privateChatStarted(peer: UInt16)
+    case privateChatEnded(peer: UInt16)
+    case privateChatMessage(peer: UInt16, fromSelf: Bool, message: String)
+    case privateChatAway(peer: UInt16)
+    case privateChatBack(peer: UInt16)
+    /// Someone paged us (the lib only queues pages addressed to us).
+    case paged(fromUser: UInt16)
+    /// A user sent a text-to-speech bind; speak `message` locally if enabled.
+    case ttsMessage(userID: UInt16, message: String)
     case disconnected
 }
 

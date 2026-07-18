@@ -4,7 +4,7 @@ import AppKit
 /// macOS system sounds at reduced volume — deliberately unobtrusive.
 @MainActor
 final class ChannelSounds {
-    enum Cue { case connect, join, leave }
+    enum Cue { case connect, join, leave, page }
 
     /// 0…1. Kept low so the cues are noticeable but never loud.
     var volume: Float = 0.35
@@ -16,6 +16,7 @@ final class ChannelSounds {
         case .connect: name = "Submarine"   // small, soft "you're online" ping
         case .join:    name = "Tink"
         case .leave:   name = "Pop"
+        case .page:    name = "Glass"       // attention-getting but not harsh
         }
         guard let sound = NSSound(named: name) else { return }
         sound.volume = volume
