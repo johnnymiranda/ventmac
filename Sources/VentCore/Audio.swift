@@ -1,5 +1,8 @@
 import Foundation
 import AVFoundation
+#if os(macOS)
+import CoreAudio
+#endif
 
 /// Plays per-user PCM streams from V3_EVENT_PLAY_AUDIO events.
 /// libventrilo3 hands us decoded 16-bit signed PCM at the codec rate.
@@ -19,7 +22,55 @@ public final class V3AudioPlayer {
     private var mutedFlag = false
     private let lock = NSLock()
 
-    public init() {}
+    public init() {
+        // Recover when the output device's config changes underneath us — e.g.
+        // AirPods flipping between A2DP (stereo, output-only) and HFP (mono, with
+        // mic) when transmit turns the mic on/off. Without this the engine dies
+        // silently and you stop hearing everyone.
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(handleConfigChange),
+            name: .AVAudioEngineConfigurationChange, object: engine)
+        #if os(macOS)
+        watchDefaultOutputDevice()
+        #endif
+    }
+
+    @objc private func handleConfigChange(_ note: Notification) {
+        lock.lock(); defer { lock.unlock() }
+        let wasStarted = started
+        engine.stop()
+        started = false
+        // Drop the voices; the device's sample rate may have changed, so let
+        // the next incoming audio rebuild them at the correct format.
+        voices.values.forEach { $0.node.stop(); engine.detach($0.node) }
+        voices.removeAll()
+        guard wasStarted else { return }
+        applyOutputDevice()
+        engine.prepare()
+        do { try engine.start(); started = true }
+        catch { NSLog("V3AudioPlayer: config-change restart failed: \(error)") }
+    }
+
+    #if os(macOS)
+    /// Follow the system default output when the user hasn't pinned a device, so
+    /// switching to AirPods after login routes voice to them (the engine
+    /// otherwise stays bound to whatever was default when it started).
+    private func watchDefaultOutputDevice() {
+        var addr = AudioObjectPropertyAddress(
+            mSelector: kAudioHardwarePropertyDefaultOutputDevice,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain)
+        AudioObjectAddPropertyListenerBlock(
+            AudioObjectID(kAudioObjectSystemObject), &addr, DispatchQueue.main
+        ) { [weak self] _, _ in
+            guard let self else { return }
+            let pinned = self.preferredOutputUID
+            if pinned == nil || pinned?.isEmpty == true {
+                self.setOutputDevice(uid: nil)   // re-resolve to the new default + restart
+            }
+        }
+    }
+    #endif
 
     /// "Mute Sound": drop all incoming audio while muted. Thread-safe.
     public func setMuted(_ muted: Bool) {
