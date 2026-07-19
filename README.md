@@ -73,6 +73,10 @@ Two tiers, chosen automatically by the kind of binding you set in Settings:
 1. **Keyboard hotkey (default)** — real press/release events over fullscreen games, zero TCC permission.
 2. **Mouse side-button** — via a listen-only `CGEventTap`; requires Input Monitoring (System Settings → Privacy & Security → Input Monitoring), which the app guides you to grant.
 
+## iOS sibling
+
+[VentiPhone](https://github.com/johnnymiranda/ventiphone) is the iOS counterpart — voice-activated transmit instead of a PTT key, sharing this project's protocol/audio core via the VentriloKit package. Like VentMac it's GPL, so it's distributed as source you build yourself.
+
 ## Protocol notes
 
 VentMac speaks the Ventrilo 3.x wire protocol via the vendored `libventrilo3`. The protocol was reverse-engineered for interoperability by the Mangler project and by [Luigi Auriemma](https://aluigi.altervista.org/) (packet encryption); VentMac reuses that already-public work. Getting it talking to present-day 3.1.0 servers took a few small updates — see [`docs/HANDSHAKE-FINDINGS.md`](docs/HANDSHAKE-FINDINGS.md) for the details.
