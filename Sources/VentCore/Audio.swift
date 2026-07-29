@@ -195,6 +195,22 @@ public final class V3AudioCapture {
     /// next `start()`.
     public var preferredInputUID: String?
 
+    /// Reports a capture failure — the input device exposed no usable format,
+    /// or the engine refused to start. Fires on the capture queue, so marshal
+    /// to the main thread before touching UI. Without this, a failed start is
+    /// invisible: the caller has already lit its "talking" state.
+    public var onError: ((String) -> Void)?
+
+    /// Voice effect applied to captured audio before it leaves for the server.
+    /// Living here means both transmit paths (push-to-talk and voice
+    /// activation) get it without either transmitter knowing about it.
+    private let voiceChanger = VoiceChanger()
+
+    public var voiceConfig: VoiceChanger.Config {
+        get { voiceChanger.config }
+        set { voiceChanger.config = newValue }
+    }
+
     public init() {}
 
     /// Begin capturing; `onChunk(pcm, rate)` fires on an audio thread.
@@ -222,7 +238,10 @@ public final class V3AudioCapture {
                 #endif
                 let hwFormat = input.outputFormat(forBus: 0)
                 guard hwFormat.sampleRate > 0, hwFormat.channelCount > 0 else {
+                    let msg = "Microphone unavailable: the selected input device reported no usable audio format. "
+                            + "If it's a Bluetooth headset, macOS may have it in output-only (A2DP) mode."
                     NSLog("V3AudioCapture: input device has no valid format; not starting")
+                    self.onError?(msg)
                     return
                 }
                 let sampleRate = UInt32(hwFormat.sampleRate)
@@ -239,7 +258,7 @@ public final class V3AudioCapture {
                             out[i] = Int16(v * 32767.0)
                         }
                     }
-                    self.onChunk?(pcm, sampleRate)
+                    self.onChunk?(self.voiceChanger.process(pcm: pcm, rate: sampleRate), sampleRate)
                 }
                 self.isConfigured = true
                 self.configuredUID = preferred
@@ -247,7 +266,15 @@ public final class V3AudioCapture {
 
             self.engine.prepare()
             do { try self.engine.start(); self.running = true }
-            catch { NSLog("V3AudioCapture: start failed: \(error)") }
+            catch {
+                NSLog("V3AudioCapture: start failed: \(error)")
+                // A failed engine start leaves the tap configured but stopped;
+                // drop the cached config so the next press rebuilds it rather
+                // than reusing a dead engine.
+                self.isConfigured = false
+                self.configuredUID = ""
+                self.onError?("Microphone failed to start: \(error.localizedDescription)")
+            }
         }
     }
 
@@ -257,6 +284,9 @@ public final class V3AudioCapture {
             // Keep the tap + configuration so the next press restarts warm.
             self.engine.stop()
             self.running = false
+            // Drop the effect's delay line, so the next transmission doesn't
+            // open with a tail of the previous one.
+            self.voiceChanger.reset()
         }
     }
 }

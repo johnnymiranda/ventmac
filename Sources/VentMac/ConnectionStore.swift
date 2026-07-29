@@ -92,6 +92,29 @@ final class ConnectionStore: ObservableObject {
             vox.sensitivityDBFS = Float(voxSensitivity)
         }
     }
+
+    // Deep-voice effect
+    @Published var deepVoice: Bool {
+        didSet {
+            UserDefaults.standard.set(deepVoice, forKey: "voice.deep")
+            applyVoiceEffect()
+        }
+    }
+    /// How far down to shift, in semitones below normal. 12 = a full octave.
+    @Published var deepVoiceAmount: Double {
+        didSet {
+            UserDefaults.standard.set(deepVoiceAmount, forKey: "voice.deepAmount")
+            applyVoiceEffect()
+        }
+    }
+
+    private func applyVoiceEffect() {
+        var cfg = VoiceChanger.Config()
+        cfg.enabled = deepVoice
+        cfg.semitones = Float(-deepVoiceAmount)
+        transmitter.voiceConfig = cfg
+        vox.voiceConfig = cfg
+    }
     /// Mic level lives in its own observable so the ~25 Hz updates only
     /// re-render the meter in Settings, not the whole main window.
     let voxMeter = VoxMeterModel()
@@ -129,6 +152,11 @@ final class ConnectionStore: ObservableObject {
         transmitMode = TransmitMode(rawValue: UserDefaults.standard.string(forKey: "transmit.mode") ?? "") ?? .ptt
         let sens = UserDefaults.standard.object(forKey: "transmit.voxSensitivity") as? Double
         voxSensitivity = sens ?? -40
+        deepVoice = UserDefaults.standard.bool(forKey: "voice.deep")
+        // 5 semitones: clearly deeper, still clean. Past ~7 the delay-line
+        // shifter starts to warble on sustained vowels.
+        deepVoiceAmount = UserDefaults.standard.object(forKey: "voice.deepAmount") as? Double ?? 5
+        // All stored properties are initialized above this line.
         vox.sensitivityDBFS = Float(voxSensitivity)
         vox.onLevel = { [weak self] level, open in
             DispatchQueue.main.async {
@@ -139,6 +167,21 @@ final class ConnectionStore: ObservableObject {
                 }
             }
         }
+        // Capture can only fail asynchronously, after the talk indicator is
+        // already lit. Surface it and drop the indicator, otherwise the app
+        // looks like it's transmitting while nobody can hear us.
+        let reportCaptureFailure: (String) -> Void = { [weak self] message in
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.transmitting = false
+                self.lastError = message
+            }
+        }
+        transmitter.onCaptureError = reportCaptureFailure
+        vox.onCaptureError = reportCaptureFailure
+        // didSet doesn't run for values assigned in init, so push the persisted
+        // effect settings to the transmitters explicitly.
+        applyVoiceEffect()
     }
 
     /// Wire audio-device selection: apply the persisted choice now and on change.

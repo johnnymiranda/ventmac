@@ -607,6 +607,22 @@ struct SettingsView: View {
                     }
                 }
             }
+            Section("Voice") {
+                Toggle("Deep voice", isOn: $store.deepVoice)
+                if store.deepVoice {
+                    HStack {
+                        Text("Depth")
+                        Slider(value: $store.deepVoiceAmount, in: 1 ... 12, step: 1)
+                        Text("−\(Int(store.deepVoiceAmount)) st")
+                            .font(.caption.monospacedDigit())
+                            .foregroundStyle(.secondary)
+                            .frame(width: 50, alignment: .trailing)
+                    }
+                    Text("Shifts your voice down in semitones — 12 is a full octave. Around 5 stays clean; higher gets more robotic on long vowels.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
             Section("Push to Talk") {
                 HStack {
                     Text("PTT key")

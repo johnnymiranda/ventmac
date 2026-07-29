@@ -320,15 +320,47 @@ public final class V3Transmitter {
         didSet { capture.preferredInputUID = preferredInputUID }
     }
 
+    /// Called when capture fails *after* `start()` has returned. Because capture
+    /// is started asynchronously, most failures cannot be reported synchronously
+    /// — without this the caller keeps showing "talking" while sending silence.
+    /// Fires on the capture queue; marshal to the main thread before touching UI.
+    public var onCaptureError: ((String) -> Void)?
+
+    /// Voice effect applied to outgoing audio.
+    public var voiceConfig: VoiceChanger.Config {
+        get { capture.voiceConfig }
+        set { capture.voiceConfig = newValue }
+    }
+
     public init(client: V3Client = .shared) {
         self.client = client
+        capture.onError = { [weak self] message in
+            // Hop to main: start()/stop() run there, so tearing down
+            // `isTransmitting` from the capture queue would race them.
+            DispatchQueue.main.async {
+                guard let self else { return }
+                // Capture never came up: tear the transmit state back down so
+                // the next press retries instead of no-opping on
+                // `isTransmitting`.
+                self.client.stopTransmit()
+                self.isTransmitting = false
+                self.onCaptureError?(message)
+            }
+        }
     }
 
     /// Begins transmitting. Capture starts asynchronously (off the main thread),
     /// so this returns immediately and never blocks the UI on a slow device.
+    /// A synchronous problem is returned here; anything that fails later on the
+    /// capture queue arrives via `onCaptureError`.
     @discardableResult
     public func start() -> String? {
         guard !isTransmitting else { return nil }
+        #if os(macOS)
+        if AudioDevices.resolve(uid: preferredInputUID, output: false) == nil {
+            return "No microphone available. Check your input device in Settings and macOS microphone permission."
+        }
+        #endif
         client.startTransmit()
         let client = self.client
         capture.start { pcm, rate in
@@ -381,8 +413,32 @@ public final class V3VoxTransmitter {
         set { gate.muted = newValue }
     }
 
+    /// Capture failure while voice activation is running. Same contract as
+    /// `V3Transmitter.onCaptureError`: fires on the capture queue.
+    public var onCaptureError: ((String) -> Void)?
+
+    /// Voice effect applied to outgoing audio. The VOX gate measures the
+    /// *processed* signal, which is what we want: the pitch shifter preserves
+    /// level, so existing sensitivity settings keep their meaning.
+    public var voiceConfig: VoiceChanger.Config {
+        get { capture.voiceConfig }
+        set { capture.voiceConfig = newValue }
+    }
+
     public init(client: V3Client = .shared) {
         self.client = client
+        capture.onError = { [weak self] message in
+            // Same reasoning as V3Transmitter: start()/stop() are main-thread.
+            DispatchQueue.main.async {
+                guard let self else { return }
+                if self.gateOpen {
+                    self.client.stopTransmit()
+                    self.gateOpen = false
+                }
+                self.isRunning = false
+                self.onCaptureError?(message)
+            }
+        }
     }
 
     public func start() {
