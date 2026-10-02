@@ -154,7 +154,7 @@ struct MainView: View {
             }
             header
             Divider()
-            List(treeRows) { row in
+            List(store.treeRows) { row in
                 rowView(row)
                     .listRowSeparator(.hidden)
             }
@@ -306,29 +306,8 @@ struct MainView: View {
 
     // MARK: Tree
 
-    struct TreeRow: Identifiable {
-        enum Kind {
-            case channel(V3Channel)
-            case user(V3User)
-        }
-        let id: String
-        let depth: Int
-        let kind: Kind
-    }
-
-    private var treeRows: [TreeRow] {
-        store.roster.flattenedTree().map { depth, node in
-            switch node {
-            case .channel(let channel):
-                return TreeRow(id: "c\(channel.id)", depth: depth, kind: .channel(channel))
-            case .user(let user):
-                return TreeRow(id: "u\(user.id)", depth: depth, kind: .user(user))
-            }
-        }
-    }
-
     @ViewBuilder
-    private func rowView(_ row: TreeRow) -> some View {
+    private func rowView(_ row: ConnectionStore.TreeRow) -> some View {
         switch row.kind {
         case .channel(let channel):
             channelRow(channel, depth: row.depth)

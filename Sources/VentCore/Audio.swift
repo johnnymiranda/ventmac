@@ -17,6 +17,7 @@ public final class V3AudioPlayer {
     private struct Voice {
         let node: AVAudioPlayerNode
         let format: AVAudioFormat
+        let backlog = AudioBacklog(limit: 0.25)
     }
     private var voices: [UInt16: Voice] = [:]
     private var mutedFlag = false
@@ -120,16 +121,33 @@ public final class V3AudioPlayer {
         let voice = voiceFor(userID: userID, rate: Double(rate), channels: ch)
         guard let buffer = makeBuffer(pcm: pcm, format: voice.format) else { return }
 
+        let duration = Double(buffer.frameLength) / voice.format.sampleRate
+        var token = voice.backlog.reserve(duration)
+        if token == nil {
+            voice.node.stop()
+            voice.backlog.reset()
+            token = voice.backlog.reserve(duration)
+        }
+        guard let token else { return }
         startEngineIfNeeded()
         if !voice.node.isPlaying { voice.node.play() }
-        voice.node.scheduleBuffer(buffer)
+        voice.node.scheduleBuffer(buffer, completionCallbackType: .dataPlayedBack) { _ in
+            voice.backlog.complete(duration, generation: token)
+        }
     }
 
     public func shutdown() {
         lock.lock(); defer { lock.unlock() }
-        voices.values.forEach { $0.node.stop() }
-        voices.removeAll()
         if started { engine.stop(); started = false }
+        voices.values.forEach { $0.node.stop(); engine.detach($0.node) }
+        voices.removeAll()
+    }
+
+    public func removeUser(_ userID: UInt16) {
+        lock.lock(); defer { lock.unlock() }
+        guard let voice = voices.removeValue(forKey: userID) else { return }
+        voice.node.stop()
+        engine.detach(voice.node)
     }
 
     private func voiceFor(userID: UInt16, rate: Double, channels: AVAudioChannelCount) -> Voice {
@@ -185,11 +203,14 @@ public final class V3AudioPlayer {
 /// the hardware sample rate. libventrilo3 resamples to the codec rate.
 public final class V3AudioCapture {
     private var engine = AVAudioEngine()
-    private let queue = DispatchQueue(label: "com.cryptexlabs.ventmac.capture")
+    // PTT and VOX share ordering when switching between their capture engines.
+    private static let workerQueue = DispatchQueue(label: "com.cryptexlabs.ventmac.capture", qos: .userInitiated)
+    private let queue = V3AudioCapture.workerQueue
     private var running = false
     private var isConfigured = false
     private var configuredUID = ""            // device the tap/engine is set up for
     private var onChunk: ((Data, UInt32) -> Void)?
+    private let delivery = CaptureDelivery()
 
     /// Preferred input device UID (empty/nil = system default). Applied on the
     /// next `start()`.
@@ -213,7 +234,7 @@ public final class V3AudioCapture {
 
     public init() {}
 
-    /// Begin capturing; `onChunk(pcm, rate)` fires on an audio thread.
+    /// Begin capturing; callbacks fire on the serial capture worker.
     ///
     /// All engine work runs OFF the main thread — initializing on a slow/bad
     /// input device can block prepare() for seconds and must never freeze the UI.
@@ -221,7 +242,8 @@ public final class V3AudioCapture {
     /// when the input device actually changes (rebuilding a reused engine's
     /// device via setDeviceID is what hangs prepare(); a fresh engine every
     /// press adds startup latency to the front of every transmission).
-    public func start(onChunkCb: @escaping (Data, UInt32) -> Void) {
+    public func start(onStarted: @escaping () -> Void = {},
+                      onChunkCb: @escaping (Data, UInt32) -> Void) {
         let preferred = preferredInputUID ?? ""
         queue.async { [weak self] in
             guard let self, !self.running else { return }
@@ -250,22 +272,22 @@ public final class V3AudioCapture {
                     guard let self, let floats = buffer.floatChannelData?[0] else { return }
                     let n = Int(buffer.frameLength)
                     guard n > 0 else { return }
-                    var pcm = Data(count: n * 2)
-                    pcm.withUnsafeMutableBytes { (raw: UnsafeMutableRawBufferPointer) in
-                        let out = raw.bindMemory(to: Int16.self)
-                        for i in 0..<n {
-                            let v = max(-1.0, min(1.0, floats[i]))
-                            out[i] = Int16(v * 32767.0)
-                        }
+                    self.delivery.submit(samples: floats, count: n, rate: sampleRate, queue: self.queue) { [weak self] pcm, rate in
+                        guard let self else { return }
+                        self.onChunk?(self.voiceChanger.process(pcm: pcm, rate: rate), rate)
                     }
-                    self.onChunk?(self.voiceChanger.process(pcm: pcm, rate: sampleRate), sampleRate)
                 }
                 self.isConfigured = true
                 self.configuredUID = preferred
             }
 
             self.engine.prepare()
-            do { try self.engine.start(); self.running = true }
+            do {
+                try self.engine.start()
+                self.running = true
+                self.delivery.begin()
+                onStarted()
+            }
             catch {
                 NSLog("V3AudioCapture: start failed: \(error)")
                 // A failed engine start leaves the tap configured but stopped;
@@ -278,9 +300,17 @@ public final class V3AudioCapture {
         }
     }
 
-    public func stop() {
+    func perform(_ action: @escaping () -> Void) {
+        queue.async(execute: action)
+    }
+
+    public func stop(onStopped: @escaping () -> Void = {}) {
+        delivery.stop()
         queue.async { [weak self] in
-            guard let self, self.running else { return }
+            guard let self else { return }
+            self.delivery.stop()
+            defer { onStopped() }
+            guard self.running else { return }
             // Keep the tap + configuration so the next press restarts warm.
             self.engine.stop()
             self.running = false

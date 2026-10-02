@@ -14,13 +14,17 @@ cd "$(dirname "$0")/.."
 
 APP=VentMac.app
 
+bash Scripts/build-codecs.sh
+export PKG_CONFIG_PATH="$PWD/.build/codecs-macos13/install/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
 swift build -c release --product VentMac
+BUILD_DIR=$(swift build -c release --show-bin-path)
 
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources" "$APP/Contents/Frameworks"
 cp Scripts/Info.plist "$APP/Contents/Info.plist"
-cp .build/release/VentMac "$APP/Contents/MacOS/VentMac"
+cp "$BUILD_DIR/VentMac" "$APP/Contents/MacOS/VentMac"
 cp Scripts/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
+cp -R .build/codecs-macos13/install/licenses "$APP/Contents/Resources/Licenses"
 
 BIN="$APP/Contents/MacOS/VentMac"
 

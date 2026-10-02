@@ -38,8 +38,19 @@ final class ConnectionStore: ObservableObject {
         case vox
     }
 
+    struct TreeRow: Identifiable {
+        enum Kind {
+            case channel(V3Channel)
+            case user(V3User)
+        }
+        let id: String
+        let depth: Int
+        let kind: Kind
+    }
+
     @Published var status: Status = .disconnected
     @Published var roster = V3Roster()
+    @Published private(set) var treeRows: [TreeRow] = []
     @Published var ownChannelID: UInt16 = 0
     @Published var ownUserID: UInt16 = 0
     @Published var lastError: String?
@@ -162,8 +173,9 @@ final class ConnectionStore: ObservableObject {
             DispatchQueue.main.async {
                 guard let self else { return }
                 self.voxMeter.levelDBFS = level
-                if self.transmitMode == .vox && self.transmitting != open {
-                    self.transmitting = open
+                if self.transmitMode == .vox {
+                    let transmitting = open && self.vox.isRunning && self.status == .connected && !self.micMuted
+                    if self.transmitting != transmitting { self.transmitting = transmitting }
                 }
             }
         }
@@ -221,6 +233,7 @@ final class ConnectionStore: ObservableObject {
     private func runSession() {
         guard let p = connParams else { return }
         roster = V3Roster()
+        treeRows = []
         soundsArmed = false
         // User IDs and phantoms are per-session — reset every derived set,
         // including the player's, so stale IDs can't mute the wrong person.
@@ -239,10 +252,9 @@ final class ConnectionStore: ObservableObject {
             let stream = client.connect(host: p.host, port: p.port,
                                         username: p.username, password: p.password)
             for await event in stream {
-                let before = roster
-                roster.apply(event)
+                let previousChannel = applyRosterEvent(event)
                 handle(event)
-                channelCue(for: event, before: before)
+                channelCue(for: event, previousChannel: previousChannel)
             }
             handleStreamEnd()
         }
@@ -254,6 +266,7 @@ final class ConnectionStore: ObservableObject {
     private func handleStreamEnd() {
         stopTalking()
         vox.stop()
+        transmitting = false
         player.shutdown()
         ping = nil
 
@@ -447,6 +460,41 @@ final class ConnectionStore: ObservableObject {
 
     // MARK: Event handling
 
+    @discardableResult
+    func applyRosterEvent(_ event: V3CoreEvent) -> UInt16? {
+        let previousChannel: UInt16?
+        let treeChanged: Bool
+        switch event {
+        case .userUpserted(let user):
+            previousChannel = roster.users[user.id]?.channelID
+            treeChanged = roster.users[user.id] != user
+        case .userRemoved(let id):
+            previousChannel = roster.users[id]?.channelID
+            treeChanged = roster.users[id] != nil
+        case .channelUpserted(let channel):
+            previousChannel = nil
+            treeChanged = roster.channels[channel.id] != channel
+        case .channelRemoved(let id):
+            previousChannel = nil
+            treeChanged = roster.channels[id] != nil
+        default:
+            previousChannel = nil
+            treeChanged = false
+        }
+        roster.apply(event)
+        if treeChanged {
+            treeRows = roster.flattenedTree().map { depth, node in
+                switch node {
+                case .channel(let channel):
+                    return TreeRow(id: "c\(channel.id)", depth: depth, kind: .channel(channel))
+                case .user(let user):
+                    return TreeRow(id: "u\(user.id)", depth: depth, kind: .user(user))
+                }
+            }
+        }
+        return previousChannel
+    }
+
     private func handle(_ event: V3CoreEvent) {
         switch event {
         case .status(_, let message):
@@ -490,6 +538,8 @@ final class ConnectionStore: ObservableObject {
             if let codec = client.codec(forChannel: id) { warnIfUnsupported(codec) }
         case .userUpserted(let u):
             applyPersistedUserAudio(u)
+        case .userRemoved(let id):
+            player.removeUser(id)
         case .ping(let ms):
             ping = ms == 0xffff ? nil : ms   // 0xffff = no measurement yet
         case .motd(let text):
@@ -570,17 +620,17 @@ final class ConnectionStore: ObservableObject {
 
     /// Play a subtle cue when another user enters or leaves *your* channel.
     /// Gated by the user's preference and armed only after the initial roster load.
-    private func channelCue(for event: V3CoreEvent, before: V3Roster) {
+    private func channelCue(for event: V3CoreEvent, previousChannel: UInt16?) {
         guard soundsArmed, SoundPref.joinLeave.enabled else { return }
         switch event {
         case .userUpserted(let u):
             guard u.id != ownUserID else { return }
-            let wasHere = before.users[u.id]?.channelID == ownChannelID
+            let wasHere = previousChannel == ownChannelID
             let isHere = u.channelID == ownChannelID
             if isHere && !wasHere { sounds.play(.join) }
             else if wasHere && !isHere { sounds.play(.leave) }
         case .userRemoved(let id):
-            guard id != ownUserID, before.users[id]?.channelID == ownChannelID else { return }
+            guard id != ownUserID, previousChannel == ownChannelID else { return }
             sounds.play(.leave)
         default:
             break

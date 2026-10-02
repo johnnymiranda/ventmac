@@ -391,6 +391,8 @@ pthread_mutex_t         *eventq_mutex = NULL;
 pthread_cond_t          *eventq_cond = NULL;
 
 v3_event                *_v3_eventq = NULL;
+v3_event                *_v3_eventq_tail = NULL;
+size_t                  _v3_eventq_length = 0;
 
 #if HAVE_SPEEX_DSP
 pthread_mutex_t         *audioq_mutex = NULL;
@@ -733,4 +735,3 @@ int _v3_audio_decode(
                 uint8_t *channels);
 
 #endif // _LIBVENTRILO3_H
-

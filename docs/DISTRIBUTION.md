@@ -17,6 +17,8 @@ brew install --cask johnnymiranda/tap/ventmac
 
 ## One-time setup
 
+Release packaging builds pinned Speex, SpeexDSP, and Opus sources with a macOS 13 deployment target using `Scripts/build-codecs.sh`. Downloads are checksum-verified and cached under `.build/codecs-macos13`; codec licenses are included in the app. This avoids shipping Homebrew bottles that require a newer macOS version than the app supports.
+
 ### 1. Developer ID Application certificate (no full Xcode needed)
 
 1. Keychain Access -> Certificate Assistant -> **Request a Certificate From a Certificate Authority** (save the CSR to disk; leave CA email blank, choose "Saved to disk").

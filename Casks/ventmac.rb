@@ -6,8 +6,8 @@
 # the sha256). IMPORTANT: the published tap cask must pin the real sha256 — never
 # ship `sha256 :no_check`, which disables download integrity checking.
 cask "ventmac" do
-  version "0.3.0"
-  sha256 :no_check # reference copy only — the tap cask pins the real sha256
+  version "0.4.0"
+  sha256 "bfcb3136cefad9f4925574f5a5dda54d9d5804e64bfb575f10674e513dff87f6"
 
   url "https://github.com/johnnymiranda/ventmac/releases/download/v#{version}/VentMac-#{version}.zip"
   name "VentMac"

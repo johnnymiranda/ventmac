@@ -335,6 +335,7 @@ public final class V3Transmitter {
     public init(client: V3Client = .shared) {
         self.client = client
         capture.onError = { [weak self] message in
+            self?.client.stopTransmit()
             // Hop to main: start()/stop() run there, so tearing down
             // `isTransmitting` from the capture queue would race them.
             DispatchQueue.main.async {
@@ -342,7 +343,6 @@ public final class V3Transmitter {
                 // Capture never came up: tear the transmit state back down so
                 // the next press retries instead of no-opping on
                 // `isTransmitting`.
-                self.client.stopTransmit()
                 self.isTransmitting = false
                 self.onCaptureError?(message)
             }
@@ -361,9 +361,8 @@ public final class V3Transmitter {
             return "No microphone available. Check your input device in Settings and macOS microphone permission."
         }
         #endif
-        client.startTransmit()
         let client = self.client
-        capture.start { pcm, rate in
+        capture.start(onStarted: { client.startTransmit() }) { pcm, rate in
             client.sendPCM(pcm, rate: rate)
         }
         isTransmitting = true
@@ -372,8 +371,8 @@ public final class V3Transmitter {
 
     public func stop() {
         guard isTransmitting else { return }
-        capture.stop()
-        client.stopTransmit()
+        let client = self.client
+        capture.stop { client.stopTransmit() }
         isTransmitting = false
     }
 }
@@ -390,7 +389,7 @@ public final class V3VoxTransmitter {
     private let gate = VoxGate()
     private var gateOpen = false
 
-    /// Mic level (dBFS) and gate state, delivered on the audio thread —
+    /// Mic level (dBFS) and gate state, delivered on the capture worker —
     /// marshal to the main thread before touching UI.
     public var onLevel: ((Float, Bool) -> Void)?
 
@@ -399,18 +398,31 @@ public final class V3VoxTransmitter {
     }
 
     /// Open threshold in dBFS; close threshold trails by 10 dB for hysteresis.
-    public var sensitivityDBFS: Float {
-        get { gate.config.openThresholdDBFS }
-        set {
-            gate.config.openThresholdDBFS = newValue
-            gate.config.closeThresholdDBFS = newValue - 10
+    public var sensitivityDBFS: Float = -40 {
+        didSet {
+            let threshold = sensitivityDBFS
+            capture.perform { [weak self] in
+                self?.gate.config.openThresholdDBFS = threshold
+                self?.gate.config.closeThresholdDBFS = threshold - 10
+            }
         }
     }
 
     /// Hard mute: closes the gate (stopping transmit) but keeps metering.
-    public var muted: Bool {
-        get { gate.muted }
-        set { gate.muted = newValue }
+    public var muted = false {
+        didSet {
+            let muted = muted
+            capture.perform { [weak self] in
+                guard let self else { return }
+                self.gate.muted = muted
+                if muted && self.gateOpen {
+                    self.client.stopTransmit()
+                    self.gateOpen = false
+                    self.gate.reset()
+                    self.onLevel?(self.gate.lastLevelDBFS, false)
+                }
+            }
+        }
     }
 
     /// Capture failure while voice activation is running. Same contract as
@@ -428,13 +440,14 @@ public final class V3VoxTransmitter {
     public init(client: V3Client = .shared) {
         self.client = client
         capture.onError = { [weak self] message in
+            guard let self else { return }
+            if self.gateOpen {
+                self.client.stopTransmit()
+                self.gateOpen = false
+            }
             // Same reasoning as V3Transmitter: start()/stop() are main-thread.
-            DispatchQueue.main.async {
+            DispatchQueue.main.async { [weak self] in
                 guard let self else { return }
-                if self.gateOpen {
-                    self.client.stopTransmit()
-                    self.gateOpen = false
-                }
                 self.isRunning = false
                 self.onCaptureError?(message)
             }
@@ -444,9 +457,10 @@ public final class V3VoxTransmitter {
     public func start() {
         guard !isRunning else { return }
         isRunning = true
-        gate.reset()
-        gateOpen = false
-        capture.start { [weak self] pcm, rate in
+        capture.start(onStarted: { [weak self] in
+            self?.gate.reset()
+            self?.gateOpen = false
+        }) { [weak self] pcm, rate in
             guard let self else { return }
             let action = self.gate.process(pcm: pcm, rate: rate)
             switch action {
@@ -468,10 +482,13 @@ public final class V3VoxTransmitter {
 
     public func stop() {
         guard isRunning else { return }
-        capture.stop()
-        if gateOpen {
-            client.stopTransmit()
-            gateOpen = false
+        capture.stop { [weak self] in
+            guard let self else { return }
+            if self.gateOpen {
+                self.client.stopTransmit()
+                self.gateOpen = false
+            }
+            self.gate.reset()
         }
         isRunning = false
     }

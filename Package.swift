@@ -58,5 +58,9 @@ let package = Package(
             name: "VentMac",
             dependencies: ["VentCore"]
         ),
+        .testTarget(
+            name: "VentMacTests",
+            dependencies: ["VentMac", "VentCore", "CVentrilo3"]
+        ),
     ]
 )

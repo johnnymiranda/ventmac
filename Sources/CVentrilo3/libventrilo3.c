@@ -6885,14 +6885,11 @@ _v3_unlock_accountlist(void) {/*{{{*/
 
 int
 v3_queue_event(v3_event *ev) {/*{{{*/
-    v3_event *last;
-    int len = 0;
-
     _v3_func_enter("v3_queue_event");
     if (eventq_mutex == NULL) {
         // do not queue events if the mutex hasn't been initialized.  This
         // means the client isn't ready (or doesn't want) to receive events
-        free(ev);
+        v3_free_event(ev);
         _v3_debug(V3_DEBUG_EVENT, "client does not appear to be listening yet... not queueing");
         _v3_func_leave("v3_queue_event");
         return true;
@@ -6904,9 +6901,11 @@ v3_queue_event(v3_event *ev) {/*{{{*/
     }
     ev->next = NULL;
     ev->timestamp = time(NULL);
-    // if this returns null, there's no events in the queue
-    if ((last = _v3_get_last_event(&len)) == NULL) {
+    // Maintain the tail so enqueuing audio remains constant-time under backlog.
+    if (_v3_eventq_tail == NULL) {
         _v3_eventq = ev;
+        _v3_eventq_tail = ev;
+        _v3_eventq_length = 1;
         _v3_debug(V3_DEBUG_EVENT, "queued event type %d.  now have 1 event in queue", ev->type);
         pthread_cond_signal(eventq_cond);
         pthread_mutex_unlock(eventq_mutex);
@@ -6914,8 +6913,10 @@ v3_queue_event(v3_event *ev) {/*{{{*/
         return true;
     }
     // otherwise, tack it on to the end
-    last->next = ev;
-    _v3_debug(V3_DEBUG_EVENT, "queued event type %d.  now have %d events in queue", ev->type, len);
+    _v3_eventq_tail->next = ev;
+    _v3_eventq_tail = ev;
+    _v3_eventq_length++;
+    _v3_debug(V3_DEBUG_EVENT, "queued event type %d.  now have %zu events in queue", ev->type, _v3_eventq_length);
     pthread_mutex_unlock(eventq_mutex);
 
     _v3_func_leave("v3_queue_event");
@@ -6935,19 +6936,23 @@ v3_get_event(int block) {/*{{{*/
         eventq_mutex = malloc(sizeof(pthread_mutex_t));
         eventq_cond = malloc(sizeof(pthread_cond_t));
         pthread_mutex_init(eventq_mutex, &mta);
-        pthread_cond_init(eventq_cond, (pthread_condattr_t *) &mta);
+        pthread_cond_init(eventq_cond, NULL);
+        pthread_mutexattr_destroy(&mta);
     }
     // if we're not blocking and ev is NULL, just return NULL;
-    if (block == V3_NONBLOCK && _v3_eventq == NULL) {
-        return NULL;
-    }
     pthread_mutex_lock(eventq_mutex);
-    if (_v3_eventq == NULL) {
+    while (_v3_eventq == NULL) {
+        if (block == V3_NONBLOCK) {
+            pthread_mutex_unlock(eventq_mutex);
+            return NULL;
+        }
         _v3_debug(V3_DEBUG_MUTEX, "waiting for an event...");
         pthread_cond_wait(eventq_cond, eventq_mutex);
     }
     ev = _v3_eventq;
     _v3_eventq = ev->next;
+    if (_v3_eventq == NULL) { _v3_eventq_tail = NULL; }
+    _v3_eventq_length--;
     pthread_mutex_unlock(eventq_mutex);
 
     return ev;
@@ -7001,14 +7006,16 @@ void
 v3_clear_events(void) {/*{{{*/
     v3_event *ev;
 
-    if (_v3_eventq == NULL) {
-        return;
-    }
+    if (eventq_mutex == NULL) { return; }
+    pthread_mutex_lock(eventq_mutex);
     while (_v3_eventq != NULL) {
         ev = _v3_eventq->next;
         v3_free_event(_v3_eventq);
         _v3_eventq = ev;
     }
+    _v3_eventq_tail = NULL;
+    _v3_eventq_length = 0;
+    pthread_mutex_unlock(eventq_mutex);
 }/*}}}*/
 
 int
